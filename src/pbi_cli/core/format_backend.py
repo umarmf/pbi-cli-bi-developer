@@ -8,6 +8,7 @@ Python dict suitable for ``format_result()``.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -388,5 +389,372 @@ def format_background_measure(
         "status": "applied",
         "visual": visual_name,
         "rule": "measure",
+        "field": field_query_ref,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Visual-level object property setters (display units, data labels, etc.)
+#
+# PBIR stores two distinct shapes inside ``visual.objects``:
+#   * per-field entries in the ``values`` list, each carrying a
+#     ``selector.metadata`` queryRef (e.g. labelDisplayUnits, backColor);
+#   * visual-level objects keyed by name (``labels``, ``valueAxis``, ...),
+#     each a list of property-groups, typically a single entry with no
+#     selector (e.g. labels.show, valueAxis.fontSize).
+# ---------------------------------------------------------------------------
+
+_NUM_LITERAL_RE = re.compile(r"^[+-]?\d+(\.\d+)?[DL]?$", re.IGNORECASE)
+_HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
+
+
+def _encode_literal(value: Any, kind: str | None = None) -> dict[str, Any]:
+    """Encode a Python value into a PBIR property-expression node.
+
+    *kind* overrides auto-detection. Without it:
+
+    * bool  -> ``{"Literal": {"Value": "true"|"false"}}``
+    * ``"true"``/``"false"`` strings -> bool literal
+    * hex color (``#RRGGBB``) -> ``{"solid": {"color": {"expr": {"Literal": ...}}}}``
+    * numeric literal (``"10D"``, ``"0L"``, ``"1000000"``) -> passed through
+    * plain int/float -> decimal literal ``"<n>D"``
+    * anything else -> single-quoted string literal ``"'x'"``
+    """
+    if isinstance(value, bool):
+        return {"expr": {"Literal": {"Value": "true" if value else "false"}}}
+
+    k = (kind or "").lower()
+    s = str(value)
+    if not k:
+        if s.lower() in ("true", "false"):
+            k = "bool"
+        elif _HEX_COLOR_RE.match(s):
+            k = "color"
+        elif _NUM_LITERAL_RE.match(s):
+            k = "num"
+        else:
+            k = "str"
+
+    if k == "bool":
+        return {"expr": {"Literal": {"Value": "true" if s.lower() == "true" else "false"}}}
+    if k == "num":
+        return {"expr": {"Literal": {"Value": s}}}
+    if k == "color":
+        c = s if s.startswith("#") else f"#{s}"
+        return {"solid": {"color": {"expr": {"Literal": {"Value": f"'{c}'"}}}}}
+    return {"expr": {"Literal": {"Value": f"'{s}'"}}}
+
+
+_DISPLAY_UNIT_MULTIPLIERS: dict[str, int] = {
+    "none": 1,
+    "ones": 1,
+    "unit": 1,
+    "thousands": 1000,
+    "thousand": 1000,
+    "k": 1000,
+    "millions": 1000000,
+    "million": 1000000,
+    "m": 1000000,
+    "billions": 1000000000,
+    "billion": 1000000000,
+    "b": 1000000000,
+}
+
+
+def _resolve_display_units(units: Any) -> int | None:
+    """Resolve a units token to an integer multiplier, or ``None`` for Auto.
+
+    Accepts named units (none/thousands/millions/billions/auto) or a raw
+    integer multiplier. ``None`` (Auto) signals that any existing
+    ``labelDisplayUnits`` override should be removed.
+    """
+    key = str(units).strip().lower()
+    if key == "auto":
+        return None
+    if key in _DISPLAY_UNIT_MULTIPLIERS:
+        return _DISPLAY_UNIT_MULTIPLIERS[key]
+    try:
+        return int(units)
+    except (ValueError, TypeError) as exc:
+        raise PbiCliError(
+            f"Unknown display units '{units}'. Use none/thousands/millions/billions/auto "
+            "or an integer multiplier."
+        ) from exc
+
+
+def _set_field_property(
+    values: list[dict[str, Any]],
+    field_query_ref: str,
+    property_name: str,
+    value_node: dict[str, Any] | None,
+    *,
+    remove: bool = False,
+) -> list[dict[str, Any]]:
+    """Merge (or remove) *property_name* on the per-field entry matching
+    *field_query_ref*, appending a new entry if none exists.
+
+    Unlike :func:`_replace_or_append`, this preserves sibling properties on an
+    existing field entry (e.g. a field may carry both ``labelDisplayUnits``
+    and ``fontSize``). Immutable.
+    """
+    result: list[dict[str, Any]] = []
+    found = False
+    for entry in values:
+        meta = entry.get("selector", {}).get("metadata", "")
+        if meta == field_query_ref:
+            found = True
+            props = dict(entry.get("properties", {}))
+            if remove:
+                props.pop(property_name, None)
+            elif value_node is not None:
+                props[property_name] = value_node
+            result.append({**entry, "properties": props})
+        else:
+            result.append(entry)
+    if not found and not remove and value_node is not None:
+        result.append(
+            {
+                "properties": {property_name: value_node},
+                "selector": {"metadata": field_query_ref},
+            }
+        )
+    return result
+
+
+def _find_field_object_key(objects: dict[str, Any], field_query_ref: str) -> str | None:
+    """Return the object key whose entry list contains *field_query_ref*.
+
+    Per-field formatting lives under different object keys depending on the
+    visual type: ``values`` for tables/matrices, ``value`` for modern
+    ``cardVisual``, etc. This scans every object key to find where a given
+    field already lives. Returns ``None`` if not present anywhere.
+    """
+    for key, val in objects.items():
+        if not isinstance(val, list):
+            continue
+        for entry in val:
+            if (
+                isinstance(entry, dict)
+                and entry.get("selector", {}).get("metadata") == field_query_ref
+            ):
+                return key
+    return None
+
+
+def _set_field_property_anywhere(
+    objects: dict[str, Any],
+    field_query_ref: str,
+    property_name: str,
+    value_node: dict[str, Any] | None,
+    *,
+    object_name: str | None = None,
+    remove: bool = False,
+    default_container: str = "values",
+) -> tuple[dict[str, Any], str | None]:
+    """Set/remove a per-field property, auto-locating the field's container.
+
+    *object_name* forces a specific container. Without it the field is
+    located across all object-key lists; if absent and creating, it is added
+    under *default_container*. Returns the new ``objects`` dict and the key
+    that was written to (``None`` when removing a field that does not exist).
+    """
+    target_key = object_name or _find_field_object_key(objects, field_query_ref)
+    if target_key is None:
+        if remove:
+            return objects, None
+        target_key = default_container
+    existing = list(objects.get(target_key, []))
+    new_list = _set_field_property(
+        existing, field_query_ref, property_name, value_node, remove=remove
+    )
+    return {**objects, target_key: new_list}, target_key
+
+
+def _set_visual_level_property(
+    objects: dict[str, Any],
+    object_name: str,
+    property_name: str,
+    value_node: dict[str, Any] | None,
+    *,
+    remove: bool = False,
+) -> dict[str, Any]:
+    """Set (or remove) *property_name* on a visual-level object.
+
+    Targets ``objects.<object_name>[0].properties`` (the single property-group
+    used for visual-level settings such as ``labels.show``). Creates the
+    object list + group when absent.
+    """
+    obj_list = list(objects.get(object_name, []))
+    if obj_list:
+        group = dict(obj_list[0])
+        props = dict(group.get("properties", {}))
+        if remove:
+            props.pop(property_name, None)
+        elif value_node is not None:
+            props[property_name] = value_node
+        obj_list[0] = {**group, "properties": props}
+    elif not remove and value_node is not None:
+        obj_list = [{"properties": {property_name: value_node}}]
+    objects[object_name] = obj_list
+    return objects
+
+
+def format_set_object(
+    definition_path: Path,
+    page_name: str,
+    visual_name: str,
+    property_name: str,
+    object_name: str | None = None,
+    value: Any = None,
+    field_query_ref: str | None = None,
+    remove: bool = False,
+    kind: str | None = None,
+) -> dict[str, Any]:
+    """Generic setter for any visual ``objects`` property.
+
+    Two scopes:
+
+    * **per-field** (``field_query_ref`` given): merges *property_name* into the
+      matching entry. The container key is auto-located (``values`` for
+      tables/matrices, ``value`` for modern ``cardVisual``); pass
+      ``object_name`` to force a specific container.
+    * **visual-level** (``object_name`` given, no field): sets
+      ``objects.<object_name>[0].properties[<property_name>]``
+      (e.g. ``labels.show``).
+
+    Pass ``remove=True`` to delete the property instead.
+
+    Returns ``{"status": "set"|"removed", "visual", "scope", "object",
+    "property", "field"}``.
+    """
+    if not field_query_ref and not object_name:
+        raise PbiCliError("Either --object (visual-level) or --field (per-field) is required.")
+
+    data = _load_visual(definition_path, page_name, visual_name)
+    visual_section = dict(data.get("visual", {}))
+    objects = dict(visual_section.get("objects", {}))
+    value_node = None if remove else _encode_literal(value, kind)
+
+    used_key: str | None
+    if field_query_ref:
+        objects, used_key = _set_field_property_anywhere(
+            objects,
+            field_query_ref,
+            property_name,
+            value_node,
+            object_name=object_name,
+            remove=remove,
+        )
+    else:
+        assert object_name is not None  # narrowed by the guard above
+        objects = _set_visual_level_property(
+            objects, object_name, property_name, value_node, remove=remove
+        )
+        used_key = object_name
+
+    new_visual = {**visual_section, "objects": objects}
+    new_data = {**data, "visual": new_visual}
+    _save_visual(definition_path, page_name, visual_name, new_data)
+
+    return {
+        "status": "removed" if remove else "set",
+        "visual": visual_name,
+        "scope": "field" if field_query_ref else "visual",
+        "object": used_key,
+        "property": property_name,
+        "field": field_query_ref,
+    }
+
+
+def format_display_units(
+    definition_path: Path,
+    page_name: str,
+    visual_name: str,
+    field_query_ref: str,
+    units: Any,
+    object_name: str | None = None,
+) -> dict[str, Any]:
+    """Set the display units (abbreviation) of a single visual field.
+
+    *units* accepts ``none`` (whole numbers), ``thousands``, ``millions``,
+    ``billions``, ``auto`` (remove override) or an integer multiplier.
+
+    Display units are stored per-field as ``labelDisplayUnits``. The container
+    is auto-located (``values`` for tables/matrices, ``value`` for modern
+    ``cardVisual``); pass *object_name* to force a specific container.
+
+    Returns ``{"status": "applied", "visual", "field", "units"}``.
+    """
+    mult = _resolve_display_units(units)
+    data = _load_visual(definition_path, page_name, visual_name)
+    visual_section = dict(data.get("visual", {}))
+    objects = dict(visual_section.get("objects", {}))
+    resolved: Any
+
+    if mult is None:  # Auto -> strip the override
+        objects, _ = _set_field_property_anywhere(
+            objects,
+            field_query_ref,
+            "labelDisplayUnits",
+            None,
+            object_name=object_name,
+            remove=True,
+        )
+        resolved = "auto"
+    else:
+        value_node = _encode_literal(f"{mult}D")
+        objects, _ = _set_field_property_anywhere(
+            objects,
+            field_query_ref,
+            "labelDisplayUnits",
+            value_node,
+            object_name=object_name,
+        )
+        resolved = mult
+
+    new_visual = {**visual_section, "objects": objects}
+    new_data = {**data, "visual": new_visual}
+    _save_visual(definition_path, page_name, visual_name, new_data)
+
+    return {
+        "status": "applied",
+        "visual": visual_name,
+        "field": field_query_ref,
+        "units": resolved,
+    }
+
+
+def format_data_labels(
+    definition_path: Path,
+    page_name: str,
+    visual_name: str,
+    show: bool,
+    field_query_ref: str | None = None,
+) -> dict[str, Any]:
+    """Show or hide data labels on a visual (or a single field).
+
+    With no *field_query_ref* this toggles ``labels.show`` at the visual
+    level. With a field it sets the per-field ``show`` (auto-located).
+
+    Returns ``{"status": "applied", "visual", "show", "field"}``.
+    """
+    value_node = _encode_literal(show)
+    data = _load_visual(definition_path, page_name, visual_name)
+    visual_section = dict(data.get("visual", {}))
+    objects = dict(visual_section.get("objects", {}))
+
+    if field_query_ref:
+        objects, _ = _set_field_property_anywhere(objects, field_query_ref, "show", value_node)
+    else:
+        objects = _set_visual_level_property(objects, "labels", "show", value_node)
+
+    new_visual = {**visual_section, "objects": objects}
+    new_data = {**data, "visual": new_visual}
+    _save_visual(definition_path, page_name, visual_name, new_data)
+
+    return {
+        "status": "applied",
+        "visual": visual_name,
+        "show": show,
         "field": field_query_ref,
     }

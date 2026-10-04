@@ -244,6 +244,32 @@ def table_rename(model: Any, old_name: str, new_name: str) -> dict[str, Any]:
     return {"status": "renamed", "oldName": old_name, "newName": new_name}
 
 
+def table_update(
+    model: Any,
+    table_name: str,
+    description: str | None = None,
+    is_hidden: bool | None = None,
+) -> dict[str, Any]:
+    """Update mutable properties of an existing table (description, hidden).
+
+    Only properties explicitly passed are changed; ``None`` leaves a property
+    untouched (so hidden can be toggled on or off without touching the
+    description, and vice-versa).
+    """
+    table = _get_table(model, table_name)
+    changed: list[str] = []
+    if description is not None:
+        table.Description = description
+        changed.append("description")
+    if is_hidden is not None:
+        table.IsHidden = bool(is_hidden)
+        changed.append("isHidden")
+    if not changed:
+        return {"status": "unchanged", "name": table_name, "changed": []}
+    model.SaveChanges()
+    return {"status": "updated", "name": table_name, "changed": changed}
+
+
 def table_mark_as_date(model: Any, table_name: str, date_column: str) -> dict[str, Any]:
     """Mark a table as a date table."""
     table = _get_table(model, table_name)

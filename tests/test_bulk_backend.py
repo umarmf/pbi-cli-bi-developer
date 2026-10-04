@@ -18,7 +18,7 @@ from pbi_cli.core.bulk_backend import (
     visual_bulk_update,
     visual_where,
 )
-from pbi_cli.core.visual_backend import visual_add, visual_get
+from pbi_cli.core.visual_backend import visual_add, visual_bind, visual_get, visual_set_container
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -313,3 +313,121 @@ def test_bulk_delete_returns_zero_when_no_match(multi_visual_page: Path) -> None
 
     assert result["deleted"] == 0
     assert result["visuals"] == []
+
+
+# ---------------------------------------------------------------------------
+# visual_where -- title pattern, field usage, all-pages
+# ---------------------------------------------------------------------------
+
+
+def test_where_by_title_pattern(multi_visual_page: Path) -> None:
+    """visual_where with title_pattern matches a visual by its literal title."""
+    visual_set_container(multi_visual_page, "test_page", "BarChart_1", title="Revenue by Region")
+    result = visual_where(multi_visual_page, "test_page", title_pattern="Revenue *")
+    assert [v["name"] for v in result] == ["BarChart_1"]
+    assert result[0]["title"] == "Revenue by Region"
+
+
+def test_where_by_title_pattern_no_measure_title(multi_visual_page: Path) -> None:
+    """Visuals with no title (or measure-driven titles) are skipped."""
+    result = visual_where(multi_visual_page, "test_page", title_pattern="*")
+    assert result == []
+
+
+def test_where_uses_measure(multi_visual_page: Path) -> None:
+    """visual_where with uses_measure matches visuals referencing that measure."""
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_1", [{"role": "value", "field": "Sales[Revenue]"}]
+    )
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_2", [{"role": "value", "field": "Sales[Margin]"}]
+    )
+    result = visual_where(multi_visual_page, "test_page", uses_measure=["Sales[Revenue]"])
+    assert [v["name"] for v in result] == ["BarChart_1"]
+
+
+def test_where_uses_measure_bare_name(multi_visual_page: Path) -> None:
+    """A bare measure name matches across tables."""
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_1", [{"role": "value", "field": "Sales[Revenue]"}]
+    )
+    result = visual_where(multi_visual_page, "test_page", uses_measure=["Revenue"])
+    assert [v["name"] for v in result] == ["BarChart_1"]
+
+
+def test_where_uses_measure_excludes_columns(multi_visual_page: Path) -> None:
+    """uses_measure must not match a column-only reference."""
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_3", [{"role": "category", "field": "Date[Month]"}]
+    )
+    result = visual_where(multi_visual_page, "test_page", uses_measure=["Date[Month]"])
+    assert result == []
+
+
+def test_where_uses_field_matches_any_kind(multi_visual_page: Path) -> None:
+    """uses_field matches both measures and columns."""
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_1", [{"role": "value", "field": "Sales[Revenue]"}]
+    )
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_3", [{"role": "category", "field": "Date[Month]"}]
+    )
+    result = visual_where(multi_visual_page, "test_page", uses_field=["Date[Month]"])
+    assert [v["name"] for v in result] == ["BarChart_3"]
+
+
+def test_where_all_pages_annotates_page(multi_visual_page: Path) -> None:
+    """visual_where with page_name=None searches every page and adds a page key."""
+    page_two = multi_visual_page / "pages" / "page_two"
+    page_two.mkdir(exist_ok=True)
+    (page_two / "visuals").mkdir(exist_ok=True)
+    _write_json(
+        page_two / "page.json",
+        {
+            "name": "page_two",
+            "displayName": "Page Two",
+            "displayOption": "FitToPage",
+            "width": 1280,
+            "height": 720,
+            "ordinal": 1,
+        },
+    )
+    visual_add(multi_visual_page, "page_two", "card", name="Card_P2")
+
+    result = visual_where(multi_visual_page, page_name=None)
+    assert len(result) == 6
+    assert all("page" in v for v in result)
+    pairs = {(v["name"], v["page"]) for v in result}
+    assert ("Card_P2", "page_two") in pairs
+    assert ("BarChart_1", "test_page") in pairs
+
+
+def test_where_all_pages_uses_measure(multi_visual_page: Path) -> None:
+    """all-pages + uses_measure narrows across pages correctly."""
+    page_two = multi_visual_page / "pages" / "page_two"
+    page_two.mkdir(exist_ok=True)
+    (page_two / "visuals").mkdir(exist_ok=True)
+    _write_json(
+        page_two / "page.json",
+        {
+            "name": "page_two",
+            "displayName": "Page Two",
+            "displayOption": "FitToPage",
+            "width": 1280,
+            "height": 720,
+            "ordinal": 1,
+        },
+    )
+    visual_add(multi_visual_page, "page_two", "card", name="Card_P2")
+    visual_bind(
+        multi_visual_page, "page_two", "Card_P2", [{"role": "field", "field": "Sales[Revenue]"}]
+    )
+    visual_bind(
+        multi_visual_page, "test_page", "BarChart_1", [{"role": "value", "field": "Sales[Revenue]"}]
+    )
+
+    result = visual_where(multi_visual_page, page_name=None, uses_measure=["Sales[Revenue]"])
+    assert {(v["name"], v["page"]) for v in result} == {
+        ("Card_P2", "page_two"),
+        ("BarChart_1", "test_page"),
+    }

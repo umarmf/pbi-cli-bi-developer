@@ -387,9 +387,33 @@ def bind(
 
 
 @visual.command()
-@click.option("--page", required=True, help="Page name/ID.")
+@click.option("--page", default=None, help="Page name/ID.")
+@click.option(
+    "--all-pages",
+    is_flag=True,
+    default=False,
+    help="Search every page (mutually exclusive with --page).",
+)
 @click.option("--type", "visual_type", default=None, help="Filter by PBIR visual type or alias.")
 @click.option("--name-pattern", default=None, help="fnmatch glob on visual name (e.g. 'Chart_*').")
+@click.option(
+    "--title-pattern",
+    default=None,
+    help="fnmatch glob on the visual's literal title text.",
+)
+@click.option(
+    "--uses-measure",
+    multiple=True,
+    help="Match visuals referencing a measure. Table[Measure] or bare Measure. Repeatable.",
+)
+@click.option(
+    "--uses-field",
+    multiple=True,
+    help=(
+        "Match visuals referencing any field (measure or column). "
+        "Table[Field] or bare Name. Repeatable."
+    ),
+)
 @click.option("--x-min", type=float, default=None, help="Minimum x position.")
 @click.option("--x-max", type=float, default=None, help="Maximum x position.")
 @click.option("--y-min", type=float, default=None, help="Minimum y position.")
@@ -399,15 +423,19 @@ def bind(
 def where(
     ctx: PbiContext,
     click_ctx: click.Context,
-    page: str,
+    page: str | None,
+    all_pages: bool,
     visual_type: str | None,
     name_pattern: str | None,
+    title_pattern: str | None,
+    uses_measure: tuple[str, ...],
+    uses_field: tuple[str, ...],
     x_min: float | None,
     x_max: float | None,
     y_min: float | None,
     y_max: float | None,
 ) -> None:
-    """Filter visuals by type and/or position bounds.
+    """Filter visuals by type, title, field usage, and/or position bounds.
 
     Examples:
 
@@ -415,19 +443,31 @@ def where(
 
       pbi visual where --page overview --x-max 640
 
-      pbi visual where --page overview --type kpi --name-pattern "KPI_*"
+      pbi visual where --page overview --title-pattern "Top *"
+
+      pbi visual where --all-pages --uses-measure "_Measures Table[Revenue]"
+
+      pbi visual where --page overview --uses-field "Manager Level Selector[Manager Level Selector]"
     """
     from pbi_cli.core.bulk_backend import visual_where
     from pbi_cli.core.pbir_path import resolve_report_path
+
+    if all_pages and page:
+        raise click.UsageError("--page and --all-pages are mutually exclusive.")
+    if not all_pages and not page:
+        raise click.UsageError("Provide --page or --all-pages.")
 
     definition_path = resolve_report_path(_get_report_path(click_ctx))
     run_command(
         ctx,
         visual_where,
         definition_path=definition_path,
-        page_name=page,
+        page_name=None if all_pages else page,
         visual_type=visual_type,
         name_pattern=name_pattern,
+        title_pattern=title_pattern,
+        uses_measure=list(uses_measure) or None,
+        uses_field=list(uses_field) or None,
         x_min=x_min,
         x_max=x_max,
         y_min=y_min,

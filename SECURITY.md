@@ -18,7 +18,7 @@ major versions should upgrade.
 If you discover a security vulnerability in pbi-cli, please report it
 responsibly. **Do not open a public issue.**
 
-Use [GitHub private vulnerability reporting](https://github.com/MinaSaad1/pbi-cli/security/advisories/new)
+Use [GitHub private vulnerability reporting](https://github.com/umarmf/pbi-cli-bi-developer/security/advisories/new)
 to submit the report.
 
 Please include:

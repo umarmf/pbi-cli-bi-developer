@@ -249,3 +249,199 @@ def background_measure(
         measure_property=measure_property,
         field_query_ref=field_query_ref,
     )
+
+
+@format_cmd.command(name="set-object")
+@click.argument("visual")
+@click.option("--page", "-p", required=True, help="Page name (folder name, not display name).")
+@click.option(
+    "--object",
+    "object_name",
+    default=None,
+    help="Visual-level object name (e.g. labels, valueAxis, categoryAxis). "
+    "Ignored when --field is given.",
+)
+@click.option(
+    "--property",
+    "property_name",
+    required=True,
+    help="Property name (e.g. show, labelDisplayUnits, fontSize, scale).",
+)
+@click.option(
+    "--value",
+    default=None,
+    help="Value, auto-encoded. Use 'true'/'false', '#RRGGBB', '10D', '0L', or plain text.",
+)
+@click.option(
+    "--field",
+    "field_query_ref",
+    default=None,
+    help="Per-field queryRef (e.g. '_Measures Table.Clicks'). Targets objects.values "
+    "instead of a visual-level object.",
+)
+@click.option(
+    "--kind",
+    default=None,
+    help="Force value encoding: bool | num | color | str (auto-detected by default).",
+)
+@click.option(
+    "--remove",
+    is_flag=True,
+    default=False,
+    help="Delete the property instead of setting it.",
+)
+@click.pass_context
+@pass_context
+def set_object(
+    ctx: PbiContext,
+    click_ctx: click.Context,
+    visual: str,
+    page: str,
+    object_name: str | None,
+    property_name: str,
+    value: str | None,
+    field_query_ref: str | None,
+    kind: str | None,
+    remove: bool,
+) -> None:
+    """Set (or remove) any visual objects property.
+
+    VISUAL is the visual folder name (e.g. 5b30ba9c6ce5b695a8df).
+
+    Two scopes, picked by the flags:
+
+    * Visual-level: ``--object labels --property show --value false``
+    * Per-field:    ``--field "T.Revenue" --property labelDisplayUnits --value 1000000D``
+
+    Example (whole numbers on a count measure):
+
+      pbi format set-object MyCard -p overview \\
+        --field "_Measures Table.Clicks" --property labelDisplayUnits --value 1D
+    """
+    from pbi_cli.core.format_backend import format_set_object
+    from pbi_cli.core.pbir_path import resolve_report_path
+
+    report_path = click_ctx.parent.obj.get("report_path") if click_ctx.parent else None
+    definition_path = resolve_report_path(report_path)
+    run_command(
+        ctx,
+        format_set_object,
+        definition_path=definition_path,
+        page_name=page,
+        visual_name=visual,
+        property_name=property_name,
+        object_name=object_name,
+        value=value,
+        field_query_ref=field_query_ref,
+        remove=remove,
+        kind=kind,
+    )
+
+
+@format_cmd.command(name="display-units")
+@click.argument("visual")
+@click.option("--page", "-p", required=True, help="Page name (folder name, not display name).")
+@click.option(
+    "--field",
+    "field_query_ref",
+    required=True,
+    help='queryRef of the field whose display units to change (e.g. "_Measures Table.Clicks").',
+)
+@click.option(
+    "--units",
+    required=True,
+    help="none/thousands/millions/billions/auto, or an integer multiplier.",
+)
+@click.option(
+    "--object",
+    "object_name",
+    default=None,
+    help="Force a per-field container (auto-located by default; e.g. 'value' for cardVisual).",
+)
+@click.pass_context
+@pass_context
+def display_units(
+    ctx: PbiContext,
+    click_ctx: click.Context,
+    visual: str,
+    page: str,
+    field_query_ref: str,
+    units: str,
+    object_name: str | None,
+) -> None:
+    """Set the display units (abbreviation) of a single visual field.
+
+    VISUAL is the visual folder name. Display units are stored per-field,
+    so --field (the field queryRef) is required. The container is
+    auto-located (values/value); use --object to force it.
+
+    Examples:
+
+      pbi format display-units MyCard -p overview --field "_Measures Table.Clicks" --units none
+      pbi format display-units MyCard -p overview --field "_Measures Table.Revenue" --units millions
+    """
+    from pbi_cli.core.format_backend import format_display_units
+    from pbi_cli.core.pbir_path import resolve_report_path
+
+    report_path = click_ctx.parent.obj.get("report_path") if click_ctx.parent else None
+    definition_path = resolve_report_path(report_path)
+    run_command(
+        ctx,
+        format_display_units,
+        definition_path=definition_path,
+        page_name=page,
+        visual_name=visual,
+        field_query_ref=field_query_ref,
+        units=units,
+        object_name=object_name,
+    )
+
+
+@format_cmd.command(name="data-labels")
+@click.argument("visual")
+@click.option("--page", "-p", required=True, help="Page name (folder name, not display name).")
+@click.option(
+    "--show/--hide",
+    default=True,
+    help="Show (default) or hide data labels.",
+)
+@click.option(
+    "--field",
+    "field_query_ref",
+    default=None,
+    help="Limit to a single field queryRef (default: visual-level labels).",
+)
+@click.pass_context
+@pass_context
+def data_labels(
+    ctx: PbiContext,
+    click_ctx: click.Context,
+    visual: str,
+    page: str,
+    show: bool,
+    field_query_ref: str | None,
+) -> None:
+    """Show or hide data labels on a visual (or a single field).
+
+    VISUAL is the visual folder name. Without --field this toggles the
+    visual-level ``labels.show``; with --field it sets the per-field label.
+
+    Examples:
+
+      pbi format data-labels MyChart -p overview --hide
+      pbi format data-labels MyChart -p overview --show --field "_Measures Table.Revenue"
+    """
+    from pbi_cli.core.format_backend import format_data_labels
+    from pbi_cli.core.pbir_path import resolve_report_path
+
+    report_path = click_ctx.parent.obj.get("report_path") if click_ctx.parent else None
+    definition_path = resolve_report_path(report_path)
+    run_command(
+        ctx,
+        format_data_labels,
+        definition_path=definition_path,
+        page_name=page,
+        visual_name=visual,
+        show=show,
+        field_query_ref=field_query_ref,
+    )

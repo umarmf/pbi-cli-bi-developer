@@ -65,6 +65,7 @@ def _register_commands() -> None:
     from pbi_cli.commands.connection import connect, connections, disconnect
     from pbi_cli.commands.database import database
     from pbi_cli.commands.dax import dax
+    from pbi_cli.commands.desktop import desktop
     from pbi_cli.commands.expression import expression
     from pbi_cli.commands.filters import filters
     from pbi_cli.commands.format_cmd import format_cmd
@@ -78,12 +79,14 @@ def _register_commands() -> None:
     from pbi_cli.commands.report import report
     from pbi_cli.commands.security import security_role
     from pbi_cli.commands.setup_cmd import setup
+    from pbi_cli.commands.static import static
     from pbi_cli.commands.table import table
     from pbi_cli.commands.trace import trace
     from pbi_cli.commands.transaction import transaction
     from pbi_cli.commands.visual import visual
 
     cli.add_command(setup)
+    cli.add_command(desktop)
     cli.add_command(connect)
     cli.add_command(disconnect)
     cli.add_command(connections)
@@ -110,6 +113,7 @@ def _register_commands() -> None:
     cli.add_command(filters)
     cli.add_command(format_cmd)
     cli.add_command(bookmarks)
+    cli.add_command(static)
 
 
 _register_commands()

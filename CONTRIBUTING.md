@@ -5,7 +5,7 @@ Thanks for your interest in contributing! Here's how to get started.
 ## Development Setup
 
 ```bash
-git clone https://github.com/MinaSaad1/pbi-cli.git
+git clone https://github.com/umarmf/pbi-cli-bi-developer.git
 cd pbi-cli
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
@@ -65,7 +65,7 @@ tests/            # Mirrors src/ structure
 
 ## Reporting Issues
 
-Open an issue on [GitHub](https://github.com/MinaSaad1/pbi-cli/issues) with:
+Open an issue on [GitHub](https://github.com/umarmf/pbi-cli-bi-developer/issues) with:
 
 - What you expected to happen
 - What actually happened

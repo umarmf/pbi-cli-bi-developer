@@ -772,6 +772,21 @@ def _parse_field_ref(ref: str) -> tuple[str, str]:
     raise PbiCliError(f"Invalid field reference '{ref}'. Expected 'Table[Column]' format.")
 
 
+def parse_field_spec(spec: str) -> tuple[str, str]:
+    """Parse a field spec into ``(table, property)``.
+
+    Accepts either ``Table[Column]`` (returns ``("Table", "Column")``) or a
+    bare ``Column`` (returns ``("", "Column")``).  Unlike :func:`_parse_field_ref`,
+    this never raises -- the table component is empty when the caller only
+    knows the field name.
+    """
+    s = spec.strip()
+    idx = s.find("[")
+    if idx > 0 and s.endswith("]"):
+        return s[:idx].strip(), s[idx + 1 : -1].strip()
+    return "", s
+
+
 def _summarize_field(field: dict[str, Any]) -> str:
     """Produce a human-readable summary of a query field expression."""
     if "Aggregation" in field:

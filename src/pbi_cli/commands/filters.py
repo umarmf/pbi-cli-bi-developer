@@ -32,6 +32,12 @@ def filters(ctx: click.Context, path: str | None, no_sync: bool) -> None:
 @filters.command(name="list")
 @click.option("--page", required=True, help="Page name (folder name, not display name).")
 @click.option("--visual", default=None, help="Visual name (returns visual filters if given).")
+@click.option(
+    "--condition",
+    is_flag=True,
+    default=False,
+    help="Return a summarized view (name, type, field, condition) instead of raw filter JSON.",
+)
 @click.pass_context
 @pass_context
 def filter_list_cmd(
@@ -39,6 +45,7 @@ def filter_list_cmd(
     click_ctx: click.Context,
     page: str,
     visual: str | None,
+    condition: bool,
 ) -> None:
     """List filters on a page or visual."""
     from pbi_cli.core.filter_backend import filter_list
@@ -52,6 +59,65 @@ def filter_list_cmd(
         definition_path=definition_path,
         page_name=page,
         visual_name=visual,
+        summarize=condition,
+    )
+
+
+@filters.command(name="where")
+@click.option("--page", required=True, help="Page name (folder name, not display name).")
+@click.option("--visual", default=None, help="Visual name (searches visual filters if given).")
+@click.option(
+    "--field",
+    "field_specs",
+    multiple=True,
+    required=True,
+    help="Field spec to match: Table[Field] or bare Field. Repeatable (OR semantics).",
+)
+@click.option(
+    "--type",
+    "type_filter",
+    default=None,
+    help="Restrict to a filter type: Categorical, TopN, RelativeDate, Advanced.",
+)
+@click.option(
+    "--condition",
+    is_flag=True,
+    default=False,
+    help="Return a summarized view instead of raw filter JSON.",
+)
+@click.pass_context
+@pass_context
+def filter_where_cmd(
+    ctx: PbiContext,
+    click_ctx: click.Context,
+    page: str,
+    visual: str | None,
+    field_specs: tuple[str, ...],
+    type_filter: str | None,
+    condition: bool,
+) -> None:
+    """Find filters whose field matches a spec.
+
+    Examples:
+
+      pbi filters where --page p1 --field "Manager Level Selector[Valid Manager (L2-L5 Only)]"
+
+      pbi filters where --page p1 --visual vis1 --field "Revenue" --condition
+    """
+    from pbi_cli.core.filter_backend import filter_where
+    from pbi_cli.core.pbir_path import resolve_report_path
+
+    report_path = click_ctx.parent.obj.get("report_path") if click_ctx.parent else None
+    definition_path = resolve_report_path(report_path)
+    run_command(
+        ctx,
+        filter_where,
+        definition_path=definition_path,
+        page_name=page,
+        field_specs=list(field_specs),
+        visual_name=visual,
+        type_filter=type_filter,
+        summarize=condition,
     )
 
 
@@ -191,6 +257,80 @@ def add_relative_date_cmd(
         column=column,
         amount=amount,
         time_unit=unit,
+        visual_name=visual,
+        name=name,
+    )
+
+
+@filters.command(name="add-advanced")
+@click.option("--page", required=True, help="Page name (folder name, not display name).")
+@click.option(
+    "--measure",
+    default=None,
+    help="Measure to filter on, Table[Measure] notation (e.g. 'T[Valid Manager]').",
+)
+@click.option(
+    "--column",
+    default=None,
+    help="Column to filter on, Table[Column] notation (alternative to --measure).",
+)
+@click.option(
+    "--op",
+    default="eq",
+    show_default=True,
+    help="Comparison operator: eq, neq, gt, gte, lt, lte.",
+)
+@click.option("--value", default="1", show_default=True, help="Comparison literal value.")
+@click.option("--visual", default=None, help="Visual name (adds visual filter if given).")
+@click.option("--name", "-n", default=None, help="Filter ID (auto-generated if omitted).")
+@click.pass_context
+@pass_context
+def add_advanced_cmd(
+    ctx: PbiContext,
+    click_ctx: click.Context,
+    page: str,
+    measure: str | None,
+    column: str | None,
+    op: str,
+    value: str,
+    visual: str | None,
+    name: str | None,
+) -> None:
+    """Add an Advanced comparison filter (measure/column vs literal).
+
+    Examples:
+
+      pbi filters add-advanced --page p1 --measure "T[Valid Manager (L2-L5 Only)]"
+
+      pbi filters add-advanced --page p1 --column "Sales[Year]" --op gte --value 2024
+
+      pbi filters add-advanced --page p1 --visual vis1 --measure "T[M]" --op eq --value 1
+    """
+    from pbi_cli.core.filter_backend import filter_add_advanced
+    from pbi_cli.core.pbir_path import resolve_report_path
+    from pbi_cli.core.visual_backend import parse_field_spec
+
+    if (measure is None) == (column is None):
+        raise click.UsageError("Provide exactly one of --measure or --column.")
+
+    field_ref = measure if measure is not None else column
+    assert field_ref is not None
+    table, prop = parse_field_spec(field_ref)
+    if not table or not prop:
+        raise click.UsageError(f"Expected 'Table[Field]' notation, got '{field_ref}'.")
+
+    report_path = click_ctx.parent.obj.get("report_path") if click_ctx.parent else None
+    definition_path = resolve_report_path(report_path)
+    run_command(
+        ctx,
+        filter_add_advanced,
+        definition_path=definition_path,
+        page_name=page,
+        table=table,
+        property_name=prop,
+        is_measure=measure is not None,
+        op=op,
+        value=value,
         visual_name=visual,
         name=name,
     )

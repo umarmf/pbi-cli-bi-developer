@@ -14,6 +14,7 @@ from pbi_cli.core.bookmark_backend import (
     bookmark_delete,
     bookmark_get,
     bookmark_list,
+    bookmark_set_scope,
     bookmark_set_visibility,
 )
 from pbi_cli.core.errors import PbiCliError
@@ -292,3 +293,184 @@ def test_bookmark_set_visibility_raises_for_unknown_bookmark(
     """set_visibility raises PbiCliError when the bookmark does not exist."""
     with pytest.raises(PbiCliError, match="not found"):
         bookmark_set_visibility(definition_path, "nonexistent", "page_x", "visual_x", hidden=True)
+
+
+# ---------------------------------------------------------------------------
+# bookmark_set_scope
+# ---------------------------------------------------------------------------
+
+
+def _make_scope_bookmark(
+    definition_path: Path,
+    name: str = "bm_scope",
+    suppress_data: bool | None = None,
+) -> Path:
+    """Create a bookmark with mixed visual containers for scope tests."""
+    bookmark_add(definition_path, "Scope Test", "page_a", name=name)
+    bm_file = definition_path / "bookmarks" / f"{name}.bookmark.json"
+    raw = json.loads(bm_file.read_text(encoding="utf-8"))
+    options: dict = {}
+    if suppress_data is not None:
+        options["suppressData"] = suppress_data
+    containers = {
+        "tbl1": {"singleVisual": {"visualType": "pivotTable", "objects": {}}},
+        "chart1": {"singleVisual": {"visualType": "clusteredColumnChart", "objects": {}}},
+        "card1": {"singleVisual": {"visualType": "cardVisual", "objects": {}}},
+        "slicer1": {"singleVisual": {"visualType": "slicer", "objects": {}}},
+        "advSlicer1": {"singleVisual": {"visualType": "advancedSlicerVisual", "objects": {}}},
+        "btn1": {"singleVisual": {"visualType": "actionButton", "objects": {}}},
+        "shape1": {"singleVisual": {"visualType": "shape", "objects": {}}},
+    }
+    raw["options"] = options
+    raw["explorationState"] = {
+        "version": "1.3",
+        "activeSection": "page_a",
+        "sections": {"page_a": {"visualContainers": containers}},
+    }
+    bm_file.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    return bm_file
+
+
+def test_bookmark_set_scope_data_visuals(definition_path: Path) -> None:
+    """--data-visuals targets only data visuals and sets applyOnlyToTargetVisuals."""
+    bm_file = _make_scope_bookmark(definition_path)
+
+    result = bookmark_set_scope(definition_path, "bm_scope", data_visuals=True)
+
+    assert result["scope"] == "selected-visuals"
+    assert result["target_count"] == 3
+    assert set(result["target_visuals"]) == {"tbl1", "chart1", "card1"}
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    assert data["options"]["applyOnlyToTargetVisuals"] is True
+    assert set(data["options"]["targetVisualNames"]) == {"tbl1", "chart1", "card1"}
+
+
+def test_bookmark_set_scope_data_visuals_preserves_suppress_data(
+    definition_path: Path,
+) -> None:
+    """--data-visuals preserves an existing suppressData value."""
+    bm_file = _make_scope_bookmark(definition_path, suppress_data=True)
+
+    bookmark_set_scope(definition_path, "bm_scope", data_visuals=True)
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    assert data["options"]["suppressData"] is True
+    assert data["options"]["applyOnlyToTargetVisuals"] is True
+
+
+def test_bookmark_set_scope_all_visuals(definition_path: Path) -> None:
+    """--all-visuals clears targets and removes applyOnlyToTargetVisuals."""
+    bm_file = _make_scope_bookmark(definition_path, suppress_data=True)
+
+    result = bookmark_set_scope(definition_path, "bm_scope", all_visuals=True)
+
+    assert result["scope"] == "all-visuals"
+    assert result["target_count"] == 0
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    assert data["options"]["targetVisualNames"] == []
+    assert "applyOnlyToTargetVisuals" not in data["options"]
+    # suppressData is untouched by an all-visuals scope change
+    assert data["options"]["suppressData"] is True
+
+
+def test_bookmark_set_scope_explicit_visuals(definition_path: Path) -> None:
+    """--visuals sets an explicit target list."""
+    bm_file = _make_scope_bookmark(definition_path)
+
+    result = bookmark_set_scope(definition_path, "bm_scope", visuals=["tbl1", "slicer1"])
+
+    assert result["scope"] == "selected-visuals"
+    assert set(result["target_visuals"]) == {"tbl1", "slicer1"}
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    assert data["options"]["applyOnlyToTargetVisuals"] is True
+    assert set(data["options"]["targetVisualNames"]) == {"tbl1", "slicer1"}
+
+
+def test_bookmark_set_scope_defaults_to_all_visuals_suppress_data(
+    definition_path: Path,
+) -> None:
+    """No mode flag defaults to all-visuals scope + suppressData (the preferred config)."""
+    bm_file = _make_scope_bookmark(definition_path, suppress_data=False)
+
+    result = bookmark_set_scope(definition_path, "bm_scope")
+
+    assert result["scope"] == "all-visuals"
+    assert result["suppress_data"] is True
+    assert result["target_count"] == 0
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    assert data["options"] == {"targetVisualNames": [], "suppressData": True}
+
+
+def test_bookmark_set_scope_rejects_multiple_modes(definition_path: Path) -> None:
+    """set_scope raises when more than one scope mode is supplied."""
+    _make_scope_bookmark(definition_path)
+
+    with pytest.raises(PbiCliError, match="At most one of"):
+        bookmark_set_scope(definition_path, "bm_scope", data_visuals=True, all_visuals=True)
+
+
+def test_bookmark_set_scope_no_suppress_data(definition_path: Path) -> None:
+    """suppress_data=False removes the suppressData option."""
+    bm_file = _make_scope_bookmark(definition_path, suppress_data=True)
+
+    result = bookmark_set_scope(definition_path, "bm_scope", suppress_data=False)
+
+    assert result["suppress_data"] is False
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    assert "suppressData" not in data["options"]
+    assert data["options"]["targetVisualNames"] == []
+
+
+def test_bookmark_set_scope_all_visuals_keeps_buttons_untouched(
+    definition_path: Path,
+) -> None:
+    """all-visuals scope leaves the explorationState intact (buttons still toggle)."""
+    bm_file = _make_scope_bookmark(definition_path)
+
+    bookmark_set_scope(definition_path, "bm_scope", all_visuals=True)
+
+    data = json.loads(bm_file.read_text(encoding="utf-8"))
+    containers = data["explorationState"]["sections"]["page_a"]["visualContainers"]
+    # every visual (including the button) remains captured -- scope only changed
+    assert set(containers.keys()) == {
+        "tbl1",
+        "chart1",
+        "card1",
+        "slicer1",
+        "advSlicer1",
+        "btn1",
+        "shape1",
+    }
+
+
+def test_bookmark_set_scope_raises_for_unknown_bookmark(definition_path: Path) -> None:
+    """set_scope raises PbiCliError when the bookmark does not exist."""
+    with pytest.raises(PbiCliError, match="not found"):
+        bookmark_set_scope(definition_path, "nope", data_visuals=True)
+
+
+def test_bookmark_set_scope_data_visuals_raises_when_no_data(definition_path: Path) -> None:
+    """--data-visuals raises when the bookmark captures no data visuals."""
+    bookmark_add(definition_path, "Empty", "page_a", name="bm_empty")
+    bm_file = definition_path / "bookmarks" / "bm_empty.bookmark.json"
+    raw = json.loads(bm_file.read_text(encoding="utf-8"))
+    raw["explorationState"] = {
+        "version": "1.3",
+        "activeSection": "page_a",
+        "sections": {
+            "page_a": {
+                "visualContainers": {
+                    "btn1": {"singleVisual": {"visualType": "actionButton", "objects": {}}}
+                }
+            }
+        },
+    }
+    bm_file.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+
+    with pytest.raises(PbiCliError, match="no data visuals"):
+        bookmark_set_scope(definition_path, "bm_empty", data_visuals=True)

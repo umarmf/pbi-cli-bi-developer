@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Fork] — 2026-10-04
+
+Fork-specific changes, rebased onto upstream `3.12.0`. Maintained by
+[umarmf](https://github.com/umarmf); provenance and licensing in [`ATTRIBUTION.md`](ATTRIBUTION.md).
+
+### Added
+- `pbi desktop open/close/status` — Power BI Desktop lifecycle management (launch, Analysis Services port discovery, connect/persist, stop).
+- `pbi model deps` — static per-table dependency scan of a PBIP project, classifying tables `used-report` / `used-model` / `review` / `unused` (no Desktop or connection). Bundled `power-bi-unused-tables` skill.
+- `pbi static decode` / `pbi static encode` — Base64 + raw-DEFLATE static-table codec (rows ↔ paste-ready M).
+- `pbi format display-units`, `pbi format data-labels`, `pbi format set-object` — PBIR output-formatting helpers.
+- `pbi table update --description/--hidden` — update table description and/or visibility.
+- Extended `pbi visual where` with `--all-pages`, `--title-pattern`, `--uses-measure`, `--uses-field`.
+- `pbi filters where` and `pbi filters add-advanced`; `filters list --condition`.
+- `pbi bookmarks set-scope` — all-visuals plus `--suppress-data`, the recommended config for bookmarks that must not reset slicer selections.
+- `reference/` — PBIP field notes: manifest, guardrails, guidelines, gotchas.
+- Test suite grown to 696 tests.
+
+### Changed
+- Rebased onto upstream `3.12.0` (adopts the `field_resolver`-based `visual bind` / `bulk-bind`).
+
 ## [3.12.0] - 2026-09-18
 
 First PyPI release since 3.11.1, so it also ships the 3.11.2 fixes below.

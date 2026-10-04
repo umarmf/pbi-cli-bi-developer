@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/banner.svg" alt="pbi-cli" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/banner.svg" alt="pbi-cli" width="850"/>
 </p>
 
 <p align="center">
@@ -8,15 +8,21 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/pbi-cli-tool/"><img src="https://img.shields.io/pypi/pyversions/pbi-cli-tool?style=flat-square&color=3776ab&label=Python" alt="Python"></a>
-  <a href="https://github.com/MinaSaad1/pbi-cli/actions"><img src="https://img.shields.io/github/actions/workflow/status/MinaSaad1/pbi-cli/ci.yml?branch=master&style=flat-square&label=CI" alt="CI"></a>
-  <a href="https://github.com/MinaSaad1/pbi-cli/blob/master/LICENSE"><img src="https://img.shields.io/github/license/MinaSaad1/pbi-cli?style=flat-square&color=06d6a0" alt="License"></a>
-  <a href="https://www.linkedin.com/in/minasaad1/"><img src="https://img.shields.io/badge/LinkedIn-Mina%20Saad-0A66C2?style=flat-square&logo=linkedin&logoColor=white" alt="LinkedIn"></a>
-  <a href="https://mina-saad.com"><img src="https://img.shields.io/badge/Website-mina--saad.com-58a6ff?style=flat-square&logo=googlechrome&logoColor=white" alt="Website"></a>
+  <sub>A standalone fork of <a href="https://github.com/MinaSaad1/pbi-cli">pbi-cli</a> by
+  Mina Saad, extended by <a href="https://github.com/umarmf">umarmf</a>.
+  See <a href="ATTRIBUTION.md">ATTRIBUTION.md</a>.</sub>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <a href="https://github.com/umarmf/pbi-cli-bi-developer/actions"><img src="https://img.shields.io/github/actions/workflow/status/umarmf/pbi-cli-bi-developer/ci.yml?branch=master&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/umarmf/pbi-cli-bi-developer/blob/master/LICENSE"><img src="https://img.shields.io/github/license/umarmf/pbi-cli-bi-developer?style=flat-square&color=06d6a0" alt="License"></a>
+  <a href="https://github.com/umarmf"><img src="https://img.shields.io/badge/GitHub-umarmf-1a1a2e?style=flat-square&logo=github" alt="GitHub"></a>
 </p>
 
 <p align="center">
   <a href="#why-pbi-cli">Why pbi-cli</a> &bull;
+  <a href="#upstream-vs-this-fork">Fork delta</a> &bull;
   <a href="#get-started">Get Started</a> &bull;
   <a href="#semantic-model-layer">Modeling</a> &bull;
   <a href="#report-layer">Reporting</a> &bull;
@@ -30,34 +36,60 @@
 ## Why pbi-cli?
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/before-after.svg" alt="Why pbi-cli" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/before-after.svg" alt="Why pbi-cli" width="850"/>
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/layers.svg" alt="Dual-Layer Architecture" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/layers.svg" alt="Dual-Layer Architecture" width="850"/>
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/stats.svg" alt="pbi-cli at a Glance" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/stats.svg" alt="pbi-cli at a Glance" width="850"/>
 </p>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/downloads-chart.svg" alt="pbi-cli cumulative downloads from PyPI" width="850"/>
-</p>
+<blockquote>
+  <sub><b>Portfolio note:</b> this is my working fork of pbi-cli, rebased onto upstream
+  <code>v3.12.0</code>. See <a href="#upstream-vs-this-fork">Upstream vs this fork</a> for the delta
+  and <a href="ATTRIBUTION.md">ATTRIBUTION.md</a> for provenance.</sub>
+</blockquote>
 
-<p align="center">
-  <sub>Cumulative downloads, refreshed daily from <a href="https://pypistats.org/packages/pbi-cli-tool">pypistats.org</a> via GitHub Actions.</sub>
-</p>
+---
+
+## Upstream vs this fork
+
+This repository tracks [pbi-cli](https://github.com/MinaSaad1/pbi-cli) and is **rebased onto upstream
+v3.12.0**, so it keeps every upstream command and fix (including the `field_resolver`-based
+`visual bind` / `bulk-bind`). On top of that it adds the work below. See
+[`ATTRIBUTION.md`](ATTRIBUTION.md) for provenance and licensing.
+
+| Area | Upstream pbi-cli | This fork |
+|------|------------------|-----------|
+| **Desktop lifecycle** | launch via an external script | `pbi desktop open/close/status` — launch, discover the Analysis Services port, connect/persist, stop |
+| **Model cleanup** | — | `pbi model deps` — static per-table dependency scan (`used-report` / `used-model` / `review` / `unused`), no Desktop needed; ships the `power-bi-unused-tables` skill |
+| **Static tables** | — | `pbi static decode` / `pbi static encode` — Base64 + raw-DEFLATE M payload ↔ rows |
+| **Visual formatting** | `format get/clear`, background rules | `pbi format display-units`, `format data-labels`, `format set-object` (generic PBIR `objects` setter) |
+| **Visual search** | `visual where` (type / name / position) | + `--all-pages`, `--title-pattern`, `--uses-measure`, `--uses-field` |
+| **Filters** | list / add-categorical / add-topn / add-relative-date | + `filters where` (find by field), `filters add-advanced` (Advanced Comparison), `filters list --condition` |
+| **Bookmarks** | list / get / add / delete / set-visibility | + `bookmarks set-scope` (all-visuals + `--suppress-data` — the config that stops bookmarks resetting slicers) |
+| **Tables** | create / delete / list | + `table update --description/--hidden` |
+| **Docs** | skills + README | + [`reference/`](reference/) — PBIP field notes: manifest, guardrails, guidelines, gotchas |
+| **Tests** | 546 test functions | 696 tests collected (CI: `ruff`, `ruff format --check`, `mypy`, `pytest` all green) |
+
+**Upstream is retained, not replaced:** DAX, modeling, deployment/TMDL, security/RLS, partitions,
+diagnostics/tracing, report scaffolds, pages, themes, and custom visuals all work unchanged. This fork
+does not remove or rename any upstream command.
 
 ---
 
 ## Get Started
 
 ```bash
-pipx install pbi-cli-tool    # 1. Install (handles PATH automatically)
-pbi-cli skills install       # 2. Register Claude Code skills (one-time setup)
-pbi connect                  # 3. Connect to Power BI Desktop
+pipx install "git+https://github.com/umarmf/pbi-cli-bi-developer.git"   # 1. Install (handles PATH)
+pbi-cli skills install                                                  # 2. Register Claude Code skills
+pbi connect                                                             # 3. Connect to Power BI Desktop
 ```
+
+> Not published to PyPI — install from the repository above, or clone and `pip install -e .`.
 
 Open Power BI Desktop with a `.pbix` file, run the three commands above, and start asking Claude.
 
@@ -67,7 +99,7 @@ Open Power BI Desktop with a `.pbix` file, run the three commands above, and sta
 <summary><b>Alternative: give Claude the repo URL</b></summary>
 
 ```
-Install and set up pbi-cli from https://github.com/MinaSaad1/pbi-cli.git
+Install and set up pbi-cli from https://github.com/umarmf/pbi-cli-bi-developer.git
 ```
 
 Claude will clone, install, connect, and set up skills automatically.
@@ -78,7 +110,7 @@ Claude will clone, install, connect, and set up skills automatically.
 <summary><b>Using pip instead of pipx?</b></summary>
 
 ```bash
-pip install pbi-cli-tool
+pip install "git+https://github.com/umarmf/pbi-cli-bi-developer.git"
 ```
 
 On Windows, `pip install` often places the `pbi` command in a directory that isn't on your PATH.
@@ -100,37 +132,37 @@ Add the printed path to your system PATH, then restart your terminal. We recomme
 Ask Claude to work with your Power BI semantic model. Requires `pbi connect`.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/chat-demo.svg" alt="Just Ask Claude" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/chat-demo.svg" alt="Just Ask Claude" width="850"/>
 </p>
 
 ### Create measures in bulk
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/bulk-operations.svg" alt="Bulk operations" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/bulk-operations.svg" alt="Bulk operations" width="850"/>
 </p>
 
 ### Debug broken DAX
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/dax-debugging.svg" alt="DAX debugging" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/dax-debugging.svg" alt="DAX debugging" width="850"/>
 </p>
 
 ### Snapshot and restore your model
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/backup-restore.svg" alt="Backup and restore" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/backup-restore.svg" alt="Backup and restore" width="850"/>
 </p>
 
 ### Audit your model for issues
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/model-health-check.svg" alt="Model health check" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/model-health-check.svg" alt="Model health check" width="850"/>
 </p>
 
 ### Test row-level security
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/rls-testing.svg" alt="RLS testing" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/rls-testing.svg" alt="RLS testing" width="850"/>
 </p>
 
 ---
@@ -140,25 +172,25 @@ Ask Claude to work with your Power BI semantic model. Requires `pbi connect`.
 Ask Claude to build and manage your Power BI reports. No connection needed -- works directly on PBIR files.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/chat-demo-report.svg" alt="Ask Claude to build reports" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/chat-demo-report.svg" alt="Ask Claude to build reports" width="850"/>
 </p>
 
 ### Build a report in 6 steps
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/report-workflow.svg" alt="Report workflow" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/report-workflow.svg" alt="Report workflow" width="850"/>
 </p>
 
 ### Visuals, pages, themes, filters
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/report-layer.svg" alt="Report layer capabilities" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/report-layer.svg" alt="Report layer capabilities" width="850"/>
 </p>
 
 ### 32 visual types
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/visual-types.svg" alt="32 Visual Types" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/visual-types.svg" alt="32 Visual Types" width="850"/>
 </p>
 
 ---
@@ -166,7 +198,7 @@ Ask Claude to build and manage your Power BI reports. No connection needed -- wo
 ## Architecture
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/architecture-flow.svg" alt="Architecture" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/architecture-flow.svg" alt="Architecture" width="850"/>
 </p>
 
 **Two layers, one CLI:**
@@ -177,7 +209,7 @@ Ask Claude to build and manage your Power BI reports. No connection needed -- wo
 ### Desktop Auto-Sync
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/auto-sync.svg" alt="Desktop Auto-Sync" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/auto-sync.svg" alt="Desktop Auto-Sync" width="850"/>
 </p>
 
 <details>
@@ -200,10 +232,10 @@ Bundled DLLs ship inside the Python package (`pbi_cli/dlls/`).
 
 ## Skills
 
-After running `pbi-cli skills install`, Claude Code discovers **13 Power BI skills**. Each skill teaches Claude a different area. You don't need to memorize commands.
+After running `pbi-cli skills install`, Claude Code discovers **14 Power BI skills**. Each skill teaches Claude a different area. You don't need to memorize commands.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MinaSaad1/pbi-cli/master/assets/skills-hub.svg" alt="12 Skills" width="850"/>
+  <img src="https://raw.githubusercontent.com/umarmf/pbi-cli-bi-developer/master/assets/skills-hub.svg" alt="14 Skills" width="850"/>
 </p>
 
 ### Semantic Model Skills (require `pbi connect`)
@@ -227,6 +259,7 @@ After running `pbi-cli skills install`, Claude Code discovers **13 Power BI skil
 | **Pages** | *"Add an Executive Overview page"* | Manages pages, bookmarks, visibility, drillthrough |
 | **Themes** | *"Apply our corporate brand colours"* | Applies themes, conditional formatting, colour scales |
 | **Filters** | *"Show only the top 10 products"* | Adds page/visual filters (TopN, date, categorical) |
+| **Unused Tables** | *"Which tables in this model can I safely delete?"* | Static per-table dependency scan (`pbi model deps`) — no Desktop needed |
 | **Custom Visuals** | *"Build a radial gauge Power BI doesn't have"* | Scaffolds a TypeScript visual project, iterates on `tsc --noEmit`, packages `.pbiviz`, imports into the report |
 
 ---
@@ -272,18 +305,20 @@ Every command below is a `pbi` subcommand, except where the `pbi-cli` prefix is 
 | Category | Commands |
 |----------|----------|
 | **Queries** | `dax execute`, `dax validate`, `dax clear-cache` |
-| **Model** | `table`, `column`, `measure`, `relationship`, `hierarchy`, `calc-group` |
+| **Model** | `table`, `column`, `measure`, `relationship`, `hierarchy`, `calc-group`, `model deps`, `model stats` |
 | **Deploy** | `database export-tmdl`, `database import-tmdl`, `database export-tmsl`, `database diff-tmdl`, `transaction` |
 | **Security** | `security-role`, `perspective` |
 | **Connect** | `connect`, `disconnect`, `connections list`, `connections last` |
 | **Data** | `partition`, `expression`, `calendar`, `advanced culture` |
-| **Diagnostics** | `trace start/stop/fetch/export`, `model stats` |
+| **Static** | `static decode`, `static encode` |
+| **Desktop** | `desktop open`, `desktop close`, `desktop status` |
+| **Diagnostics** | `trace start/stop/fetch/export` |
 | **Report** | `report create`, `report info`, `report validate`, `report preview`, `report reload` |
 | **Pages** | `report add-page`, `report delete-page`, `report get-page`, `report set-background`, `report set-visibility` |
 | **Visuals** | `visual add/get/list/update/delete`, `visual bind`, `visual bulk-bind/bulk-update/bulk-delete`, `visual where` |
-| **Filters** | `filters list`, `filters add-categorical/add-topn/add-relative-date`, `filters remove/clear` |
-| **Formatting** | `format get/clear`, `format background-gradient/background-conditional/background-measure` |
-| **Bookmarks** | `bookmarks list/get/add/delete/set-visibility` |
+| **Filters** | `filters list/where`, `filters add-categorical/add-topn/add-relative-date/add-advanced`, `filters remove/clear` |
+| **Formatting** | `format get/clear`, `format display-units/data-labels/set-object`, `format background-gradient/background-conditional/background-measure` |
+| **Bookmarks** | `bookmarks list/get/add/delete/set-visibility/set-scope` |
 | **Tools** | `setup`, `repl` |
 | **Setup** | `pbi-cli skills install/list/uninstall` (on the `pbi-cli` command, not `pbi`) |
 
@@ -321,29 +356,29 @@ Tab completion, command history, and a dynamic prompt showing your active connec
 ## Development
 
 ```bash
-git clone https://github.com/MinaSaad1/pbi-cli.git
-cd pbi-cli
+git clone https://github.com/umarmf/pbi-cli-bi-developer.git
+cd pbi-cli-bi-developer
 pip install -e ".[dev]"
 ```
 
 ```bash
 ruff check src/ tests/         # Lint
 mypy src/                      # Type check
-pytest -m "not e2e"            # Run tests (488 tests)
+pytest -m "not e2e"            # Run tests (696 tests)
 ```
 
 ---
 
 ## Bundled third-party software
 
-`pbi-cli-tool` ships with Microsoft Analysis Services client library
+`pbi-cli-bi-developer` ships with Microsoft Analysis Services client library
 assemblies (`Microsoft.AnalysisServices.*.dll`) under `src/pbi_cli/dlls/`.
 These binaries are **not** covered by pbi-cli's MIT license. They are
 redistributed unmodified under the Microsoft Software License Terms for
 Microsoft Analysis Management Objects (AMO) and Microsoft Analysis
 Services - ADOMD.NET. Full terms are in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and the companion
-[NOTICE](NOTICE) file. By installing `pbi-cli-tool` you agree to those
+[NOTICE](NOTICE) file. By installing `pbi-cli-bi-developer` you agree to those
 terms in addition to the MIT License that applies to the rest of the
 package.
 
@@ -361,8 +396,8 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 ---
 
 <p align="center">
-  <a href="https://github.com/MinaSaad1/pbi-cli"><img src="https://img.shields.io/badge/GitHub-pbi--cli-1a1a2e?style=flat-square&logo=github" alt="GitHub"></a>
-  <a href="https://pypi.org/project/pbi-cli-tool/"><img src="https://img.shields.io/badge/PyPI-pbi--cli--tool-f2c811?style=flat-square&logo=pypi&logoColor=white" alt="PyPI"></a>
+  <a href="https://github.com/umarmf/pbi-cli-bi-developer"><img src="https://img.shields.io/badge/GitHub-pbi--cli--bi--developer-1a1a2e?style=flat-square&logo=github" alt="GitHub"></a>
+  <a href="https://github.com/umarmf"><img src="https://img.shields.io/badge/Author-umarmf-1a1a2e?style=flat-square&logo=github" alt="Author"></a>
 </p>
 
 <p align="center">
@@ -373,13 +408,13 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 
 ## About
 
-pbi-cli is built and maintained by [Mina Saad](https://www.mina-saad.com/pbi-cli). It started as a
-fix for the slowest part of my own job: authoring a measure meant a dialog, a
-refresh, and a visual check, every time.
+This repository is my working fork of [pbi-cli](https://github.com/MinaSaad1/pbi-cli), originally
+created and maintained by [Mina Saad](https://www.mina-saad.com/pbi-cli). pbi-cli started as a fix for
+the slowest part of BI work: authoring a measure meant a dialog, a refresh, and a visual check, every
+time.
 
-If your team has the same problem one layer up, that is the work I do.
+I use it as the backbone of my Power BI / semantic-model work and extend it where the upstream tool had
+gaps — desktop lifecycle, static-table tooling, model dependency scanning, and richer report-layer
+search. See [`ATTRIBUTION.md`](ATTRIBUTION.md) for provenance and licensing.
 
-I work out what is actually costing a business, then build whatever fixes it: an
-AI agent, an automation, or a full application. Handed over so your team owns it.
-
-[Book a call](https://cal.com/minasaad/60min) · [mina-saad.com](https://www.mina-saad.com)
+Find me on [GitHub](https://github.com/umarmf).

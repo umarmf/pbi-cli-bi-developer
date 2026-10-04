@@ -151,6 +151,31 @@ def rename(ctx: PbiContext, old_name: str, new_name: str) -> None:
     )
 
 
+@table.command()
+@click.argument("name")
+@click.option("--description", default=None, help="New table description.")
+@click.option(
+    "--hidden/--visible",
+    default=None,
+    help="Hide or show the table (omit to leave unchanged).",
+)
+@pass_context
+def update(ctx: PbiContext, name: str, description: str | None, hidden: bool | None) -> None:
+    """Update a table's description and/or visibility."""
+    from pbi_cli.core.session import get_session_for_command
+    from pbi_cli.core.tom_backend import table_update
+
+    session = get_session_for_command(ctx)
+    run_command(
+        ctx,
+        table_update,
+        model=session.model,
+        table_name=name,
+        description=description,
+        is_hidden=hidden,
+    )
+
+
 @table.command(name="mark-date")
 @click.argument("name")
 @click.option("--date-column", required=True, help="Date column to use.")

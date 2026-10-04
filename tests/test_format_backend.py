@@ -18,7 +18,10 @@ from pbi_cli.core.format_backend import (
     format_background_gradient,
     format_background_measure,
     format_clear,
+    format_data_labels,
+    format_display_units,
     format_get,
+    format_set_object,
 )
 
 # ---------------------------------------------------------------------------
@@ -648,3 +651,260 @@ def test_format_background_conditional_invalid_comparison(
             color_hex="#000000",
             comparison="between",
         )
+
+
+# ---------------------------------------------------------------------------
+# format_display_units
+# ---------------------------------------------------------------------------
+
+
+def test_display_units_none_creates_label_display_units(report_with_visual: Path) -> None:
+    """--units none writes labelDisplayUnits='1D' on a fresh field entry."""
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "none")
+
+    data = _read_visual(report_with_visual)
+    entry = data["visual"]["objects"]["values"][0]
+    assert entry["selector"]["metadata"] == FIELD_SALES
+    assert entry["properties"]["labelDisplayUnits"] == {"expr": {"Literal": {"Value": "1D"}}}
+
+
+def test_display_units_millions_value(report_with_visual: Path) -> None:
+    """--units millions writes labelDisplayUnits='1000000D'."""
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "millions")
+
+    data = _read_visual(report_with_visual)
+    value = data["visual"]["objects"]["values"][0]["properties"]["labelDisplayUnits"]
+    assert value == {"expr": {"Literal": {"Value": "1000000D"}}}
+
+
+@pytest.mark.parametrize(
+    "token,expected",
+    [
+        ("none", "1D"),
+        ("thousands", "1000D"),
+        ("millions", "1000000D"),
+        ("billions", "1000000000D"),
+        ("k", "1000D"),
+        ("m", "1000000D"),
+        ("2500", "2500D"),
+    ],
+)
+def test_display_units_tokens(report_with_visual: Path, token: str, expected: str) -> None:
+    """Named units and raw multipliers resolve to the correct D-literal."""
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, token)
+    data = _read_visual(report_with_visual)
+    value = data["visual"]["objects"]["values"][0]["properties"]["labelDisplayUnits"]
+    assert value == {"expr": {"Literal": {"Value": expected}}}
+
+
+def test_display_units_invalid_raises(report_with_visual: Path) -> None:
+    """An unknown units token raises PbiCliError."""
+    with pytest.raises(PbiCliError, match="Unknown display units"):
+        format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "bazillion")
+
+
+def test_display_units_merges_into_existing_field(report_with_visual: Path) -> None:
+    """Setting display units on a field that already has CF preserves the CF."""
+    format_background_gradient(
+        report_with_visual,
+        PAGE_NAME,
+        VISUAL_NAME,
+        input_table="financials",
+        input_column="Sales",
+        field_query_ref=FIELD_SALES,
+    )
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "none")
+
+    data = _read_visual(report_with_visual)
+    values = data["visual"]["objects"]["values"]
+    assert len(values) == 1  # merged, not duplicated
+    props = values[0]["properties"]
+    assert "backColor" in props  # original CF preserved
+    assert props["labelDisplayUnits"] == {"expr": {"Literal": {"Value": "1D"}}}
+
+
+def test_display_units_auto_removes_override(report_with_visual: Path) -> None:
+    """--units auto strips an existing labelDisplayUnits override."""
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "millions")
+    result = format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "auto")
+
+    assert result["units"] == "auto"
+    data = _read_visual(report_with_visual)
+    # auto leaves an empty properties entry (selector retained) — no labelDisplayUnits
+    values = data["visual"]["objects"]["values"]
+    assert len(values) == 1
+    assert "labelDisplayUnits" not in values[0]["properties"]
+
+
+def test_display_units_replaces_existing(report_with_visual: Path) -> None:
+    """Changing units twice on the same field yields one entry with the new value."""
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "millions")
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "none")
+
+    data = _read_visual(report_with_visual)
+    values = data["visual"]["objects"]["values"]
+    assert len(values) == 1
+    value = values[0]["properties"]["labelDisplayUnits"]
+    assert value == {"expr": {"Literal": {"Value": "1D"}}}
+
+
+def test_display_units_auto_locates_value_container(report_with_visual: Path) -> None:
+    """A field living under objects.value (modern cardVisual) is updated in place."""
+    # Pre-seed a cardVisual-style structure with the field under objects.value
+    vpath = report_with_visual / "pages" / PAGE_NAME / "visuals" / VISUAL_NAME / "visual.json"
+    seeded = _read_visual(report_with_visual)
+    seeded["visual"]["visualType"] = "cardVisual"
+    seeded["visual"]["objects"] = {
+        "value": [
+            {
+                "properties": {"fontSize": {"expr": {"Literal": {"Value": "20D"}}}},
+                "selector": {"metadata": FIELD_SALES},
+            }
+        ]
+    }
+    _write_json(vpath, seeded)
+
+    format_display_units(report_with_visual, PAGE_NAME, VISUAL_NAME, FIELD_SALES, "none")
+
+    data = _read_visual(report_with_visual)
+    # updated in place under `value`, NOT duplicated into a new `values` list
+    assert "values" not in data["visual"]["objects"]
+    entry = data["visual"]["objects"]["value"][0]
+    assert entry["selector"]["metadata"] == FIELD_SALES
+    assert entry["properties"]["labelDisplayUnits"] == {"expr": {"Literal": {"Value": "1D"}}}
+    assert "fontSize" in entry["properties"]  # sibling preserved
+
+
+# ---------------------------------------------------------------------------
+# format_data_labels
+# ---------------------------------------------------------------------------
+
+
+def test_data_labels_hide_visual_level(report_with_visual: Path) -> None:
+    """Hiding data labels sets labels[0].properties.show=false at visual level."""
+    format_data_labels(report_with_visual, PAGE_NAME, VISUAL_NAME, show=False)
+
+    data = _read_visual(report_with_visual)
+    labels = data["visual"]["objects"]["labels"]
+    assert labels[0]["properties"]["show"] == {"expr": {"Literal": {"Value": "false"}}}
+
+
+def test_data_labels_show_visual_level(report_with_visual: Path) -> None:
+    """Showing data labels sets labels[0].properties.show=true."""
+    format_data_labels(report_with_visual, PAGE_NAME, VISUAL_NAME, show=True)
+
+    data = _read_visual(report_with_visual)
+    value = data["visual"]["objects"]["labels"][0]["properties"]["show"]
+    assert value == {"expr": {"Literal": {"Value": "true"}}}
+
+
+def test_data_labels_per_field(report_with_visual: Path) -> None:
+    """With a field_query_ref, labels.show goes into the per-field values entry."""
+    format_data_labels(
+        report_with_visual, PAGE_NAME, VISUAL_NAME, show=True, field_query_ref=FIELD_SALES
+    )
+
+    data = _read_visual(report_with_visual)
+    entry = data["visual"]["objects"]["values"][0]
+    assert entry["selector"]["metadata"] == FIELD_SALES
+    assert entry["properties"]["show"] == {"expr": {"Literal": {"Value": "true"}}}
+
+
+def test_data_labels_idempotent(report_with_visual: Path) -> None:
+    """Toggling labels twice does not create a second labels property-group."""
+    format_data_labels(report_with_visual, PAGE_NAME, VISUAL_NAME, show=False)
+    format_data_labels(report_with_visual, PAGE_NAME, VISUAL_NAME, show=True)
+
+    data = _read_visual(report_with_visual)
+    labels = data["visual"]["objects"]["labels"]
+    assert len(labels) == 1
+    assert labels[0]["properties"]["show"] == {"expr": {"Literal": {"Value": "true"}}}
+
+
+# ---------------------------------------------------------------------------
+# format_set_object (generic)
+# ---------------------------------------------------------------------------
+
+
+def test_set_object_visual_level(report_with_visual: Path) -> None:
+    """Generic setter writes a visual-level property under the named object."""
+    format_set_object(
+        report_with_visual,
+        PAGE_NAME,
+        VISUAL_NAME,
+        property_name="showAxisTitle",
+        object_name="valueAxis",
+        value="false",
+    )
+
+    data = _read_visual(report_with_visual)
+    value = data["visual"]["objects"]["valueAxis"][0]["properties"]["showAxisTitle"]
+    assert value == {"expr": {"Literal": {"Value": "false"}}}
+
+
+def test_set_object_per_field(report_with_visual: Path) -> None:
+    """Generic setter with --field writes into the per-field values entry."""
+    format_set_object(
+        report_with_visual,
+        PAGE_NAME,
+        VISUAL_NAME,
+        property_name="fontSize",
+        value="12D",
+        field_query_ref=FIELD_SALES,
+    )
+
+    data = _read_visual(report_with_visual)
+    entry = data["visual"]["objects"]["values"][0]
+    assert entry["selector"]["metadata"] == FIELD_SALES
+    assert entry["properties"]["fontSize"] == {"expr": {"Literal": {"Value": "12D"}}}
+
+
+def test_set_object_remove_visual_level(report_with_visual: Path) -> None:
+    """--remove deletes a visual-level property."""
+    format_set_object(
+        report_with_visual,
+        PAGE_NAME,
+        VISUAL_NAME,
+        property_name="show",
+        object_name="labels",
+        value="true",
+    )
+    format_set_object(
+        report_with_visual,
+        PAGE_NAME,
+        VISUAL_NAME,
+        property_name="show",
+        object_name="labels",
+        remove=True,
+    )
+
+    data = _read_visual(report_with_visual)
+    assert "show" not in data["visual"]["objects"]["labels"][0]["properties"]
+
+
+def test_set_object_requires_object_or_field(report_with_visual: Path) -> None:
+    """Without --object or --field the setter raises PbiCliError."""
+    with pytest.raises(PbiCliError, match="Either --object"):
+        format_set_object(
+            report_with_visual,
+            PAGE_NAME,
+            VISUAL_NAME,
+            property_name="show",
+            value="true",
+        )
+
+
+def test_set_object_color_value(report_with_visual: Path) -> None:
+    """A hex color value is encoded as a solid color expression."""
+    format_set_object(
+        report_with_visual,
+        PAGE_NAME,
+        VISUAL_NAME,
+        property_name="color",
+        object_name="labels",
+        value="#FF0000",
+    )
+
+    data = _read_visual(report_with_visual)
+    value = data["visual"]["objects"]["labels"][0]["properties"]["color"]
+    assert value == {"solid": {"color": {"expr": {"Literal": {"Value": "'#FF0000'"}}}}}

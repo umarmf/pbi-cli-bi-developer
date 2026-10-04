@@ -17,6 +17,7 @@ from typing import Any
 
 from pbi_cli.core.errors import PbiCliError
 from pbi_cli.core.pbir_path import get_page_dir, get_visual_dir
+from pbi_cli.core.visual_backend import parse_field_spec
 
 # ---------------------------------------------------------------------------
 # JSON helpers
@@ -85,18 +86,128 @@ def filter_list(
     definition_path: Path,
     page_name: str,
     visual_name: str | None = None,
+    summarize: bool = False,
 ) -> list[dict[str, Any]]:
     """List filters on a page or specific visual.
 
     If visual_name is None, returns page-level filters from page.json.
     If visual_name is given, returns visual-level filters from visual.json.
-    Returns the raw filter dicts from filterConfig.filters[].
+    Returns the raw filter dicts from filterConfig.filters[], or a summarized
+    view (``{"name", "type", "field", "condition"}``) when *summarize* is set.
     """
     target = _resolve_target_path(definition_path, page_name, visual_name)
     if not target.exists():
         raise PbiCliError(f"File not found: {target}")
     data = _read_json(target)
-    return _get_filters(data)
+    filters = _get_filters(data)
+    if summarize:
+        return [_summarize_filter(f) for f in filters]
+    return filters
+
+
+# ---------------------------------------------------------------------------
+# Filter inspection helpers
+# ---------------------------------------------------------------------------
+
+# ComparisonKind integer codes used by Power BI Advanced/Comparison filters.
+_COMPARISON_KINDS: dict[str, int] = {
+    "eq": 0,
+    "neq": 1,
+    "gt": 2,
+    "gte": 3,
+    "lt": 4,
+    "lte": 5,
+}
+
+_COMPARISON_KINDS_REV: dict[int, str] = {v: k for k, v in _COMPARISON_KINDS.items()}
+
+
+def _filter_field_ref(f: dict[str, Any]) -> tuple[str, str, str]:
+    """Return ``(kind, entity, property)`` for a filter's ``field`` block."""
+    field = f.get("field", {})
+    for kind in ("Measure", "Column", "Aggregation"):
+        if kind in field:
+            item = field[kind]
+            source_ref = item.get("Expression", {}).get("SourceRef", {})
+            entity = source_ref.get("Entity", source_ref.get("Source", ""))
+            prop = item.get("Property", "")
+            return kind, entity or "", prop or ""
+    return "", "", ""
+
+
+def _summarize_filter(f: dict[str, Any]) -> dict[str, Any]:
+    """Produce a human-readable summary of a raw filter dict."""
+    kind, entity, prop = _filter_field_ref(f)
+    field_str = f"{entity}[{prop}]" if entity else prop
+    ftype = f.get("type", "")
+    name = f.get("name", "")
+    body = f.get("filter", {})
+    condition = ""
+
+    where = body.get("Where", [])
+    if where:
+        cond = where[0].get("Condition", {})
+        if "Comparison" in cond:
+            cmp_ = cond["Comparison"]
+            op = _COMPARISON_KINDS_REV.get(cmp_.get("ComparisonKind"), "?")
+            val = cmp_.get("Right", {}).get("Literal", {}).get("Value", "")
+            condition = f"{op} {val}"
+        elif "In" in cond:
+            in_ = cond["In"]
+            values = in_.get("Values", [])
+            if values:
+                vals = [
+                    v[0].get("Literal", {}).get("Value", "")
+                    if isinstance(v, list) and v
+                    else str(v)
+                    for v in values
+                ]
+                condition = "in [" + ", ".join(vals) + "]"
+            elif "Table" in in_:
+                condition = "in (subquery)"
+        elif "Between" in cond:
+            condition = "between (relative date)"
+
+    if not condition and ftype == "TopN":
+        subq = body.get("From", [{}])[0].get("Expression", {}).get("Subquery", {}).get("Query", {})
+        condition = f"top {subq.get('Top', '')}"
+    if not condition and ftype == "RelativeDate":
+        condition = "relative date"
+
+    return {"name": name, "type": ftype, "field": field_str, "condition": condition}
+
+
+def filter_where(
+    definition_path: Path,
+    page_name: str,
+    field_specs: list[str],
+    visual_name: str | None = None,
+    type_filter: str | None = None,
+    summarize: bool = False,
+) -> list[dict[str, Any]]:
+    """Return filters on a page/visual whose field matches any *field_specs*.
+
+    *field_specs* are ``Table[Field]`` or bare ``Field`` strings. A bare spec
+    matches on property alone. *type_filter* optionally restricts to a filter
+    type (``Categorical``, ``TopN``, ``RelativeDate``, ``Advanced``).
+    """
+    target = _resolve_target_path(definition_path, page_name, visual_name)
+    if not target.exists():
+        raise PbiCliError(f"File not found: {target}")
+    data = _read_json(target)
+    filters = _get_filters(data)
+
+    result: list[dict[str, Any]] = []
+    for f in filters:
+        if type_filter is not None and f.get("type") != type_filter:
+            continue
+        _, entity, prop = _filter_field_ref(f)
+        for spec in field_specs:
+            spec_table, spec_prop = parse_field_spec(spec)
+            if (not spec_table or entity == spec_table) and prop == spec_prop:
+                result.append(_summarize_filter(f) if summarize else f)
+                break
+    return result
 
 
 def _to_pbi_literal(value: str) -> str:
@@ -190,6 +301,96 @@ def filter_add_categorical(
     _write_json(target, updated)
 
     return {"status": "added", "name": filter_name, "type": "Categorical", "scope": scope}
+
+
+def filter_add_advanced(
+    definition_path: Path,
+    page_name: str,
+    table: str,
+    property_name: str,
+    is_measure: bool = True,
+    op: str = "eq",
+    value: str = "1",
+    visual_name: str | None = None,
+    name: str | None = None,
+) -> dict[str, Any]:
+    """Add an Advanced (measure/column comparison) filter to a page or visual.
+
+    Builds a Comparison filter of the form ``<field> <op> <value>`` (e.g.
+    ``'Manager Level Selector'[Valid Manager (L2-L5 Only)] = 1``). This is the
+    generic "Advanced filtering" shape Power BI Desktop emits for measure
+    filters -- there is no dedicated ``add-categorical``/``add-topn`` command
+    for it.
+
+    *table* / *property_name* name the field; *is_measure* chooses a Measure
+    vs Column reference. *op* is one of ``eq``, ``neq``, ``gt``, ``gte``,
+    ``lt``, ``lte``. *value* is encoded as a PBI literal (integers get an
+    ``L`` suffix, floats a ``D`` suffix, anything else single-quoted).
+
+    Returns a status dict with name, type, scope, op, and value.
+    """
+    op_lower = op.strip().lower()
+    if op_lower not in _COMPARISON_KINDS:
+        valid = ", ".join(_COMPARISON_KINDS)
+        raise PbiCliError(f"op must be one of {valid}, got '{op}'.")
+
+    target = _resolve_target_path(definition_path, page_name, visual_name)
+    if not target.exists():
+        raise PbiCliError(f"File not found: {target}")
+
+    filter_name = name if name is not None else _generate_name()
+    alias = table[0].lower()
+    scope = "visual" if visual_name is not None else "page"
+    kind_key = "Measure" if is_measure else "Column"
+
+    entry: dict[str, Any] = {
+        "name": filter_name,
+        "field": {
+            kind_key: {
+                "Expression": {"SourceRef": {"Entity": table}},
+                "Property": property_name,
+            }
+        },
+        "type": "Advanced",
+        "filter": {
+            "Version": 2,
+            "From": [{"Name": alias, "Entity": table, "Type": 0}],
+            "Where": [
+                {
+                    "Condition": {
+                        "Comparison": {
+                            "ComparisonKind": _COMPARISON_KINDS[op_lower],
+                            "Left": {
+                                kind_key: {
+                                    "Expression": {"SourceRef": {"Source": alias}},
+                                    "Property": property_name,
+                                }
+                            },
+                            "Right": {"Literal": {"Value": _to_pbi_literal(value)}},
+                        }
+                    }
+                }
+            ],
+        },
+    }
+
+    if scope == "page":
+        entry["howCreated"] = "User"
+
+    data = _read_json(target)
+    filters = list(_get_filters(data))
+    filters.append(entry)
+    updated = _set_filters(data, filters)
+    _write_json(target, updated)
+
+    return {
+        "status": "added",
+        "name": filter_name,
+        "type": "Advanced",
+        "scope": scope,
+        "op": op_lower,
+        "value": value,
+    }
 
 
 def filter_remove(

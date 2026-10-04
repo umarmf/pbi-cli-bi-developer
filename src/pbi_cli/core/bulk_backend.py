@@ -11,14 +11,16 @@ report layer: takes a ``definition_path: Path`` and returns a plain dict.
 from __future__ import annotations
 
 import fnmatch
+import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pbi_cli.core.field_resolver import FieldIndex, index_from_report
 from pbi_cli.core.visual_backend import (
     VISUAL_DATA_ROLES,
     _resolve_visual_type,
+    parse_field_spec,
     visual_bind,
     visual_delete,
     visual_list,
@@ -26,26 +28,106 @@ from pbi_cli.core.visual_backend import (
 )
 
 
+def _all_page_names(definition_path: Path) -> list[str]:
+    """Return the page folder names across the whole report."""
+    from pbi_cli.core.report_backend import page_list
+
+    return [p["name"] for p in page_list(definition_path)]
+
+
+def _load_visual_json(
+    definition_path: Path, page_name: str, visual_name: str
+) -> dict[str, Any] | None:
+    """Load a visual's full JSON, or ``None`` if it does not exist."""
+    vfile = definition_path / "pages" / page_name / "visuals" / visual_name / "visual.json"
+    if not vfile.exists():
+        return None
+    return cast("dict[str, Any]", json.loads(vfile.read_text(encoding="utf-8")))
+
+
+def _iter_field_refs(node: Any, kind: str | None = None) -> Any:
+    """Yield ``(kind, entity, property)`` for every field reference in a visual.
+
+    Walks the visual's ``queryState`` projections, ``sortDefinition``,
+    conditional-formatting inputs and field-parameter expressions, following
+    the ``Measure``/``Column`` key context so each reference carries its kind.
+    """
+    if isinstance(node, dict):
+        prop = node.get("Property")
+        expr = node.get("Expression")
+        if isinstance(prop, str) and isinstance(expr, dict):
+            source_ref = expr.get("SourceRef")
+            if isinstance(source_ref, dict):
+                entity = source_ref.get("Entity") or source_ref.get("Source")
+                if isinstance(entity, str) and entity:
+                    yield kind, entity, prop
+        for key, value in node.items():
+            child_kind = kind
+            if isinstance(value, dict) and key in ("Measure", "Column"):
+                child_kind = key
+            yield from _iter_field_refs(value, child_kind)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_field_refs(item, kind)
+
+
+def _visual_title(data: dict[str, Any]) -> str | None:
+    """Extract a visual's literal title text, or ``None`` if absent/measure-driven."""
+    vco = data.get("visual", {}).get("visualContainerObjects", {})
+    for entry in vco.get("title", []):
+        text = entry.get("properties", {}).get("text", {}).get("expr", {})
+        lit = text.get("Literal", {}).get("Value")
+        if isinstance(lit, str):
+            return lit.strip("'")
+    return None
+
+
+def _spec_matches(spec: str, refs: list[tuple[str, str, str]], kind: str | None = None) -> bool:
+    """Return whether any ``(kind, entity, property)`` ref matches a field spec.
+
+    ``kind`` restricts to ``"Measure"`` or ``"Column"``; ``None`` matches any.
+    A spec without a table component (bare ``Name``) matches on property alone.
+    """
+    table, prop = parse_field_spec(spec)
+    for ref_kind, entity, ref_prop in refs:
+        if kind is not None and ref_kind != kind:
+            continue
+        if table and entity != table:
+            continue
+        if ref_prop == prop:
+            return True
+    return False
+
+
 def visual_where(
     definition_path: Path,
-    page_name: str,
+    page_name: str | None = None,
     visual_type: str | None = None,
     name_pattern: str | None = None,
+    title_pattern: str | None = None,
+    uses_measure: list[str] | tuple[str, ...] | None = None,
+    uses_field: list[str] | tuple[str, ...] | None = None,
     x_min: float | None = None,
     x_max: float | None = None,
     y_min: float | None = None,
     y_max: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter visuals on a page by type and/or position bounds.
+    """Filter visuals by type, name/title pattern, field usage, or position.
 
     Returns the subset of ``visual_list()`` matching ALL provided criteria.
     All filter arguments are optional -- omitting all returns every visual.
 
     Args:
         definition_path: Path to the ``definition/`` folder.
-        page_name: Name of the page to search.
+        page_name: Name of the page to search. ``None`` searches every page
+            and annotates each result with a ``page`` key.
         visual_type: Resolved PBIR visualType or user alias (e.g. ``"bar"``).
         name_pattern: fnmatch pattern matched against visual names (e.g. ``"Chart_*"``).
+        title_pattern: fnmatch pattern matched against literal visual titles
+            (measure-driven titles are skipped, so they cannot be matched here).
+        uses_measure: Field specs (``Table[Measure]`` or bare ``Measure``); a
+            visual matches if it references any of them as a Measure.
+        uses_field: Field specs matched against any field kind (Measure or Column).
         x_min: Minimum x position (inclusive).
         x_max: Maximum x position (inclusive).
         y_min: Minimum y position (inclusive).
@@ -55,25 +137,52 @@ def visual_where(
     if visual_type is not None:
         resolved_type = _resolve_visual_type(visual_type)
 
-    all_visuals = visual_list(definition_path, page_name)
+    measure_specs: list[str] = list(uses_measure or [])
+    field_specs: list[str] = list(uses_field or [])
+    need_details = bool(title_pattern or measure_specs or field_specs)
+
+    pages: list[str] = [page_name] if page_name is not None else _all_page_names(definition_path)
+
     result: list[dict[str, Any]] = []
 
-    for v in all_visuals:
-        if resolved_type is not None and v.get("visual_type") != resolved_type:
-            continue
-        if name_pattern is not None and not fnmatch.fnmatch(v.get("name", ""), name_pattern):
-            continue
-        x = v.get("x", 0.0)
-        y = v.get("y", 0.0)
-        if x_min is not None and x < x_min:
-            continue
-        if x_max is not None and x > x_max:
-            continue
-        if y_min is not None and y < y_min:
-            continue
-        if y_max is not None and y > y_max:
-            continue
-        result.append(v)
+    for page in pages:
+        for v in visual_list(definition_path, page):
+            if resolved_type is not None and v.get("visual_type") != resolved_type:
+                continue
+            if name_pattern is not None and not fnmatch.fnmatch(v.get("name", ""), name_pattern):
+                continue
+            x = v.get("x", 0.0)
+            y = v.get("y", 0.0)
+            if x_min is not None and x < x_min:
+                continue
+            if x_max is not None and x > x_max:
+                continue
+            if y_min is not None and y < y_min:
+                continue
+            if y_max is not None and y > y_max:
+                continue
+
+            if need_details:
+                data = _load_visual_json(definition_path, page, v["name"])
+                title = _visual_title(data) if data else None
+                refs = list(_iter_field_refs(data.get("visual", {}))) if data else []
+                if title_pattern is not None:
+                    if title is None or not fnmatch.fnmatch(title, title_pattern):
+                        continue
+                if measure_specs and not any(
+                    _spec_matches(spec, refs, kind="Measure") for spec in measure_specs
+                ):
+                    continue
+                if field_specs and not any(
+                    _spec_matches(spec, refs, kind=None) for spec in field_specs
+                ):
+                    continue
+                v = {**v, "title": title}
+
+            if page_name is None:
+                v = {**v, "page": page}
+
+            result.append(v)
 
     return result
 

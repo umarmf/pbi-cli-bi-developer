@@ -8,10 +8,11 @@ version = "3.12.0"
 description = "CLI for Power BI semantic models and PBIR reports - direct .NET connection for token-efficient AI agent usage"
 readme = "README.pypi.md"
 license = "MIT AND LicenseRef-Microsoft-AS-Client-Libraries"
-license-files = ["LICENSE", "THIRD_PARTY_LICENSES.md", "NOTICE"]
+license-files = ["LICENSE", "THIRD_PARTY_LICENSES.md", "NOTICE", "ATTRIBUTION.md"]
 requires-python = ">=3.10"
 authors = [
-    {name = "pbi-cli contributors"},
+    {name = "umarmf"},
+    {name = "pbi-cli contributors (upstream: github.com/MinaSaad1/pbi-cli)"},
 ]
 keywords = ["power-bi", "cli", "semantic-model", "dax", "claude-code", "tom", "pbir", "report"]
 classifiers = [
@@ -40,9 +41,11 @@ pbi = "pbi_cli.main:cli"
 pbi-cli = "pbi_cli.main_pbi_cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/MinaSaad1/pbi-cli"
-Repository = "https://github.com/MinaSaad1/pbi-cli"
-Issues = "https://github.com/MinaSaad1/pbi-cli/issues"
+Homepage = "https://github.com/umarmf/pbi-cli-bi-developer"
+Repository = "https://github.com/umarmf/pbi-cli-bi-developer"
+Issues = "https://github.com/umarmf/pbi-cli-bi-developer/issues"
+Author = "https://github.com/umarmf"
+Upstream = "https://github.com/MinaSaad1/pbi-cli"
 
 [project.optional-dependencies]
 dev = [

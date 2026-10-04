@@ -27,6 +27,45 @@ SCHEMA_BOOKMARK = (
     "fabric/item/report/definition/bookmark/2.1.0/schema.json"
 )
 
+# Visual types that render data (charts / tables / cards). These are the only
+# candidates for a "selected visuals" bookmark scope. Slicers/filters
+# ("slicer", "advancedSlicerVisual", "filterVisual") and chrome ("actionButton",
+# "shape", "textbox", "image", "pageNavigator", "bookmarkNavigator") are
+# deliberately excluded so that toggling a bookmark never resets page filters.
+DATA_VISUAL_TYPES = frozenset(
+    {
+        "pivotTable",
+        "tableEx",
+        "matrix",
+        "lineChart",
+        "areaChart",
+        "stackedAreaChart",
+        "clusteredColumnChart",
+        "stackedColumnChart",
+        "clusteredBarChart",
+        "stackedBarChart",
+        "ribbonChart",
+        "waterfallChart",
+        "scatterChart",
+        "pieChart",
+        "donutChart",
+        "funnel",
+        "gauge",
+        "kpi",
+        "card",
+        "cardVisual",
+        "cardMultiRow",
+        "lineClusteredColumnComboChart",
+        "lineStackedColumnComboChart",
+        "map",
+        "shapeMap",
+        "decompositionTreeVisual",
+        "keyDriversVisual",
+        "influencerVisual",
+        "qnaVisual",
+    }
+)
+
 # ---------------------------------------------------------------------------
 # JSON helpers
 # ---------------------------------------------------------------------------
@@ -191,6 +230,113 @@ def bookmark_delete(
     _write_json(index_file, updated_index)
 
     return {"status": "deleted", "name": name}
+
+
+def _data_visual_names(bm: dict[str, Any]) -> list[str]:
+    """Collect data-visual IDs captured in a bookmark's exploration state.
+
+    Walks ``explorationState.sections.*.visualContainers`` and returns the IDs
+    whose ``singleVisual.visualType`` is a data-rendering type (chart/table/
+    card). Slicers, buttons, shapes, text boxes and images are excluded.
+    Results are sorted for deterministic output.
+    """
+    exploration = bm.get("explorationState") or {}
+    sections = exploration.get("sections") or {}
+    data_ids: set[str] = set()
+    for _page_id, section in sections.items():
+        containers = section.get("visualContainers") or {}
+        for visual_id, container in containers.items():
+            if not isinstance(container, dict):
+                continue
+            single = container.get("singleVisual") or {}
+            if single.get("visualType") in DATA_VISUAL_TYPES:
+                data_ids.add(visual_id)
+    return sorted(data_ids)
+
+
+def bookmark_set_scope(
+    definition_path: Path,
+    name: str,
+    *,
+    data_visuals: bool = False,
+    all_visuals: bool = False,
+    visuals: list[str] | None = None,
+    suppress_data: bool = True,
+) -> dict[str, Any]:
+    """Change a bookmark's scope (All Visuals vs Selected Visuals).
+
+    At most one of *data_visuals*, *all_visuals*, or *visuals* may be supplied.
+    When none is given, the scope defaults to *all_visuals*:
+
+    - ``all_visuals=True`` -- target every visual (the Power BI default) by
+      clearing ``targetVisualNames`` and removing ``applyOnlyToTargetVisuals``.
+    - ``visuals=[...]`` -- target exactly the given visual IDs.
+    - ``data_visuals=True`` -- target only the data visuals captured in the
+      bookmark (charts/tables/cards), excluding slicers, buttons and chrome.
+      NOTE: this is a niche option -- it changes the scope to selected-visuals,
+      which also stops the bookmark from hiding/showing non-data visuals such
+      as navigation buttons. For view-switch bookmarks prefer ``all_visuals``
+      combined with ``suppress_data=True`` (see below).
+
+    ``suppress_data`` controls the bookmark's "Data" setting
+    (``options.suppressData``) and defaults to ``True`` -- i.e. unchecking
+    "Data" in Power BI. This is the recommended configuration for view-switch
+    bookmarks: the bookmark still hides/shows every visual (buttons included),
+    but it does NOT save or re-apply data/filter state, so page filters such as
+    the time-period slicer persist across bookmark clicks.
+
+    Selected-visuals scopes set ``options.applyOnlyToTargetVisuals`` to
+    ``true``.
+
+    Raises ``PbiCliError`` if the bookmark does not exist, or when *data_visuals*
+    is requested but the bookmark captures no data visuals.
+    """
+    modes = [bool(data_visuals), bool(all_visuals), bool(visuals)]
+    if sum(modes) > 1:
+        raise PbiCliError("At most one of data_visuals, all_visuals, or visuals may be supplied.")
+
+    bm_file = _bookmark_path(definition_path, name)
+    if not bm_file.exists():
+        raise PbiCliError(f"Bookmark '{name}' not found.")
+
+    bm = _read_json(bm_file)
+    options = dict(bm.get("options") or {})
+
+    if data_visuals:
+        target = _data_visual_names(bm)
+        if not target:
+            raise PbiCliError(
+                f"Bookmark '{name}' captures no data visuals; cannot derive a "
+                "selected-visuals scope."
+            )
+        options = {**options, "applyOnlyToTargetVisuals": True, "targetVisualNames": target}
+        scope = "selected-visuals"
+    elif visuals:
+        target = sorted(set(visuals or []))
+        options = {**options, "applyOnlyToTargetVisuals": True, "targetVisualNames": target}
+        scope = "selected-visuals"
+    else:
+        options.pop("applyOnlyToTargetVisuals", None)
+        options["targetVisualNames"] = []
+        target = []
+        scope = "all-visuals"
+
+    if suppress_data:
+        options["suppressData"] = True
+    else:
+        options.pop("suppressData", None)
+
+    new_bm = {**bm, "options": options}
+    _write_json(bm_file, new_bm)
+
+    return {
+        "status": "updated",
+        "bookmark": name,
+        "scope": scope,
+        "suppress_data": suppress_data,
+        "target_visuals": target,
+        "target_count": len(target),
+    }
 
 
 def bookmark_set_visibility(

@@ -16,12 +16,14 @@ import pytest
 
 from pbi_cli.core.errors import PbiCliError
 from pbi_cli.core.filter_backend import (
+    filter_add_advanced,
     filter_add_categorical,
     filter_add_relative_date,
     filter_add_topn,
     filter_clear,
     filter_list,
     filter_remove,
+    filter_where,
 )
 
 # ---------------------------------------------------------------------------
@@ -621,3 +623,202 @@ def test_filter_add_relative_date_visual_scope(definition_path: Path) -> None:
     )
     f = _read(visual_json)["filterConfig"]["filters"][0]
     assert "howCreated" not in f
+
+
+# ---------------------------------------------------------------------------
+# filter_add_advanced
+# ---------------------------------------------------------------------------
+
+
+def test_filter_add_advanced_measure_structure(definition_path: Path) -> None:
+    """filter_add_advanced writes a Comparison filter over a measure."""
+    result = filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Manager Level Selector",
+        property_name="Valid Manager (L2-L5 Only)",
+        is_measure=True,
+        op="eq",
+        value="1",
+    )
+    assert result["status"] == "added"
+    assert result["type"] == "Advanced"
+    assert result["scope"] == "page"
+    assert result["op"] == "eq"
+    assert result["value"] == "1"
+
+    page_json = definition_path / "pages" / "page_overview" / "page.json"
+    f = _read(page_json)["filterConfig"]["filters"][0]
+    assert f["type"] == "Advanced"
+    assert f["field"]["Measure"]["Property"] == "Valid Manager (L2-L5 Only)"
+    assert f["field"]["Measure"]["Expression"]["SourceRef"]["Entity"] == "Manager Level Selector"
+    assert f["howCreated"] == "User"
+
+    body = f["filter"]
+    assert body["Version"] == 2
+    assert body["From"][0]["Name"] == "m"
+    assert body["From"][0]["Entity"] == "Manager Level Selector"
+
+    comparison = body["Where"][0]["Condition"]["Comparison"]
+    assert comparison["ComparisonKind"] == 0  # eq
+    assert comparison["Left"]["Measure"]["Property"] == "Valid Manager (L2-L5 Only)"
+    assert comparison["Left"]["Measure"]["Expression"]["SourceRef"]["Source"] == "m"
+    assert comparison["Right"]["Literal"]["Value"] == "1L"
+
+
+def test_filter_add_advanced_op_mapping(definition_path: Path) -> None:
+    """op names map to the correct ComparisonKind integer."""
+    filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Sales",
+        property_name="Revenue",
+        op="gte",
+        value="100",
+    )
+    page_json = definition_path / "pages" / "page_overview" / "page.json"
+    comparison = _read(page_json)["filterConfig"]["filters"][0]["filter"]["Where"][0]["Condition"][
+        "Comparison"
+    ]
+    assert comparison["ComparisonKind"] == 3  # gte
+    assert comparison["Right"]["Literal"]["Value"] == "100L"
+
+
+def test_filter_add_advanced_column_reference(definition_path: Path) -> None:
+    """is_measure=False produces a Column reference instead of a Measure."""
+    filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Sales",
+        property_name="Year",
+        is_measure=False,
+        op="gte",
+        value="2024",
+    )
+    page_json = definition_path / "pages" / "page_overview" / "page.json"
+    f = _read(page_json)["filterConfig"]["filters"][0]
+    assert "Column" in f["field"]
+    assert "Measure" not in f["field"]
+    left = f["filter"]["Where"][0]["Condition"]["Comparison"]["Left"]
+    assert "Column" in left
+
+
+def test_filter_add_advanced_visual_scope(definition_path: Path) -> None:
+    """filter_add_advanced adds a visual filter with no howCreated key."""
+    result = filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Manager Level Selector",
+        property_name="Valid Manager (L2-L5 Only)",
+        visual_name="visual_abc123",
+    )
+    assert result["scope"] == "visual"
+    visual_json = (
+        definition_path / "pages" / "page_overview" / "visuals" / "visual_abc123" / "visual.json"
+    )
+    f = _read(visual_json)["filterConfig"]["filters"][0]
+    assert "howCreated" not in f
+    assert f["type"] == "Advanced"
+
+
+def test_filter_add_advanced_invalid_op(definition_path: Path) -> None:
+    """filter_add_advanced raises PbiCliError for an unknown operator."""
+    with pytest.raises(PbiCliError, match="op must be one of"):
+        filter_add_advanced(
+            definition_path,
+            "page_overview",
+            table="Sales",
+            property_name="Revenue",
+            op="contains",
+        )
+
+
+# ---------------------------------------------------------------------------
+# filter_list summarize
+# ---------------------------------------------------------------------------
+
+
+def test_filter_list_summarize(definition_path: Path) -> None:
+    """filter_list with summarize=True returns name/type/field/condition dicts."""
+    filter_add_categorical(
+        definition_path, "page_overview", "Sales", "Region", ["North", "South"], name="f_cat"
+    )
+    filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Manager Level Selector",
+        property_name="Valid Manager (L2-L5 Only)",
+        name="f_adv",
+    )
+    result = filter_list(definition_path, "page_overview", summarize=True)
+    assert len(result) == 2
+
+    cat = next(r for r in result if r["name"] == "f_cat")
+    assert cat["type"] == "Categorical"
+    assert cat["field"] == "Sales[Region]"
+    assert "North" in cat["condition"]
+
+    adv = next(r for r in result if r["name"] == "f_adv")
+    assert adv["type"] == "Advanced"
+    assert adv["field"] == "Manager Level Selector[Valid Manager (L2-L5 Only)]"
+    assert adv["condition"] == "eq 1L"
+
+
+# ---------------------------------------------------------------------------
+# filter_where
+# ---------------------------------------------------------------------------
+
+
+def test_filter_where_matches_field(definition_path: Path) -> None:
+    """filter_where returns only filters whose field matches the spec."""
+    filter_add_categorical(
+        definition_path, "page_overview", "Sales", "Region", ["East"], name="f_region"
+    )
+    filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Manager Level Selector",
+        property_name="Valid Manager (L2-L5 Only)",
+        name="f_valid",
+    )
+
+    result = filter_where(
+        definition_path,
+        "page_overview",
+        field_specs=["Manager Level Selector[Valid Manager (L2-L5 Only)]"],
+    )
+    assert len(result) == 1
+    assert result[0]["name"] == "f_valid"
+
+
+def test_filter_where_bare_field_name(definition_path: Path) -> None:
+    """A bare field spec matches on property name alone."""
+    filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Manager Level Selector",
+        property_name="Valid Manager (L2-L5 Only)",
+        name="f_valid",
+    )
+    result = filter_where(
+        definition_path, "page_overview", field_specs=["Valid Manager (L2-L5 Only)"]
+    )
+    assert [f["name"] for f in result] == ["f_valid"]
+
+
+def test_filter_where_type_filter(definition_path: Path) -> None:
+    """filter_where with type_filter restricts to a filter type."""
+    filter_add_categorical(
+        definition_path, "page_overview", "Sales", "Region", ["East"], name="f_region"
+    )
+    filter_add_advanced(
+        definition_path,
+        "page_overview",
+        table="Sales",
+        property_name="Revenue",
+        name="f_rev",
+    )
+    result = filter_where(
+        definition_path, "page_overview", field_specs=["Revenue"], type_filter="Advanced"
+    )
+    assert [f["name"] for f in result] == ["f_rev"]

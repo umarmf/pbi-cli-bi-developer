@@ -52,6 +52,9 @@ marketing/
 # Local-only documents (private notes, call prep, etc.)
 docs/
 
+# Generated DAX run scripts (reviewable, auto-pruned to last 50)
+dax-runs/
+
 # Assets not referenced in README
 assets/*.png
 assets/Claude_AI_symbol.svg
