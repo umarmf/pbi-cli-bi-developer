@@ -2,11 +2,7 @@
 
 A standalone, MIT-licensed fork of **[pbi-cli](https://github.com/MinaSaad1/pbi-cli)** by
 [Mina Saad](https://www.mina-saad.com/pbi-cli), maintained by [umarmf](https://github.com/umarmf),
-and **rebased onto upstream v3.12.0**.
-
-I use pbi-cli as the backbone of my Power BI / semantic-model work and extend it where the upstream
-tool had gaps. The delta is below; see [`ATTRIBUTION.md`](ATTRIBUTION.md) for provenance and
-licensing.
+and **rebased onto upstream v3.12.0**. See [`ATTRIBUTION.md`](ATTRIBUTION.md) for provenance.
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python">
@@ -17,7 +13,13 @@ licensing.
 
 ---
 
-## Fork delta (upstream vs this fork)
+## Why pbi-cli?
+
+→ [Read "Why pbi-cli?" in the upstream README](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#why-pbi-cli)
+
+---
+
+## Upstream vs this fork
 
 This repository tracks [pbi-cli](https://github.com/MinaSaad1/pbi-cli) and is **rebased onto upstream
 v3.12.0**, so it keeps every upstream command and fix (including the `field_resolver`-based
@@ -42,7 +44,7 @@ fork does not remove or rename any upstream command.
 
 ---
 
-## Install
+## Get Started
 
 This fork is not published to PyPI. Requires **Windows**, **Python 3.10+**, and **Power BI Desktop**.
 
@@ -62,25 +64,83 @@ pip install -e .
 
 ---
 
-## Upstream documentation
+## Semantic Model Layer
 
-Everything else is upstream pbi-cli behaviour. It is documented in the original README rather than
-duplicated here (so it never drifts) — links point to the corresponding section:
+Same as upstream, plus the fork commands `pbi desktop open/close/status`, `pbi model deps`,
+`pbi static decode/encode`, and `pbi table update` (see the [fork delta](#upstream-vs-this-fork)).
 
-| Topic | Upstream README section |
-|-------|-------------------------|
-| Why pbi-cli — the two-layer design | [Why pbi-cli?](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#why-pbi-cli) |
-| Install options and first run | [Get Started](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#get-started) |
-| Semantic model commands (requires `pbi connect`) | [Semantic Model Layer](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#semantic-model-layer) |
-| Report / PBIR commands (no connection needed) | [Report Layer](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#report-layer) |
-| Architecture and Desktop auto-sync | [Architecture](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#architecture) |
-| Bundled Claude Code skills | [Skills](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#skills) |
-| Custom visual authoring | [Custom Visual Authoring](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#custom-visual-authoring) |
-| Full command reference | [All Commands](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#all-commands) |
-| Interactive REPL | [REPL Mode](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#repl-mode) |
-| Development and tests | [Development](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#development) |
-| Microsoft DLL licensing | [Bundled third-party software](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#bundled-third-party-software) |
-| Contributing to upstream | [Contributing](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#contributing) |
+→ [Upstream: Semantic Model Layer](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#semantic-model-layer)
+
+---
+
+## Report Layer
+
+Same as upstream, plus `pbi format display-units` / `data-labels` / `set-object`, the extended
+`pbi visual where` options, `pbi filters where` / `add-advanced`, and `pbi bookmarks set-scope`
+(see the [fork delta](#upstream-vs-this-fork)).
+
+→ [Upstream: Report Layer](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#report-layer)
+
+---
+
+## Architecture
+
+→ [Upstream: Architecture](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#architecture)
+
+---
+
+## Skills
+
+Ships **14** skills — the upstream set plus **`power-bi-unused-tables`**.
+
+→ [Upstream: Skills](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#skills)
+
+---
+
+## Custom Visual Authoring
+
+→ [Upstream: Custom Visual Authoring](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#custom-visual-authoring)
+
+---
+
+## All Commands
+
+The full command reference is upstream. This fork's additions are listed in the
+[fork delta](#upstream-vs-this-fork).
+
+→ [Upstream: All Commands](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#all-commands)
+
+---
+
+## REPL Mode
+
+→ [Upstream: REPL Mode](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#repl-mode)
+
+---
+
+## Development
+
+Same workflow as upstream (`ruff`, `mypy`, `pytest`), run against this fork — **696 tests**. Clone this
+repository, then `pip install -e ".[dev]"`.
+
+→ [Upstream: Development](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#development)
+
+---
+
+## Bundled third-party software
+
+Same Microsoft Analysis Services client libraries as upstream; see this repository's
+[`NOTICE`](NOTICE) and [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+
+→ [Upstream: Bundled third-party software](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#bundled-third-party-software)
+
+---
+
+## Contributing
+
+→ [Upstream: Contributing](https://github.com/MinaSaad1/pbi-cli/blob/master/README.md#contributing)
+
+---
 
 ## Fork-specific docs
 
