@@ -134,7 +134,11 @@ def open(
     pre_ports = _snapshot_ports()
 
     _say(ctx, print_info, f"Launching {pbip.name}...")
-    os.startfile(str(pbip))
+    startfile = getattr(os, "startfile", None)  # Windows-only; absent on other platforms
+    if startfile is None:
+        print_error("`pbi desktop open` requires Windows (os.startfile is unavailable).")
+        raise SystemExit(1)
+    startfile(str(pbip))
 
     port = _poll_for_port(pre_ports, timeout=timeout)
     if port is None:
